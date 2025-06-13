@@ -99,8 +99,8 @@ async function handleNewUser(sock, sender) {
     await sock.sendMessage(sender, { 
     text: `📅 *تحية طيبة من شركة مجالات التميز للاستقدام*\n\nفي حال تم التواصل معكم من قبل احد الموظفين الرجاء الانتظار وسوف يتم الرد عليكم خلال لحظات`
 });
-    respondedMessages.set(sender, "MAIN_MENU");
 
+respondedMessages.set(sender, "MAIN_MENU");
 // 🔹 معالجة المستخدم الحالي
 async function handleExistingUser(sock, sender, text) {
     const userState = respondedMessages.get(sender);
