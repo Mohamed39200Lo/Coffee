@@ -18,7 +18,7 @@ const token_part2 = "10lbzRmImzrOblgnc";
 const token_part3 = "4rC7fU3JyDa8";
 const GITHUB_TOKEN = token_part1 + token_part2 + token_part3;
 const INACTIVITY_TIMEOUT = 5 * 60 * 1000; // 5 دقائق بالمللي ثانية
-const IGNORE_OLD_MESSAGES_THRESHOLD = 15 * 60 * 1000; // 15 دقيقة بالمللي ثانية
+const IGNORE_OLD_MESSAGES_THRESHOLD = 25 * 60 * 1000; // 15 دقيقة بالمللي ثانية
 
 // 🔹 دالة لتوليد معرف عشوائي
 function generateSessionId() {
