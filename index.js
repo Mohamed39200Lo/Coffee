@@ -12,10 +12,11 @@ global.qrCodeUrl = null;
 const respondedMessages = new Map();
 const customerServiceSessions = new Map(); // لتتبع جلسات خدمة العملاء
 const lastMessageTimestamps = new Map(); // لتتبع وقت آخر رسالة
-const GIST_ID = "593a92a68bf6590b9de835ad3c3afcfa";
-const token_part1 = "ghp_HvUg8Ts";
-const token_part2 = "10lbzRmImzrOblgnc";
-const token_part3 = "4rC7fU3JyDa8";
+
+const GIST_ID = "1050e1f10d7f5591f4f26ca53f2189e9";
+const token_part1 = "ghp_gFkAlF";
+const token_part2 = "A4sbNyuLtX";
+const token_part3 = "YvqKfUEBHXNaPh3ABRms";
 const GITHUB_TOKEN = token_part1 + token_part2 + token_part3;
 const INACTIVITY_TIMEOUT = 5 * 60 * 1000; // 5 دقائق بالمللي ثانية
 const IGNORE_OLD_MESSAGES_THRESHOLD = 25 * 60 * 1000; // 15 دقيقة بالمللي ثانية
