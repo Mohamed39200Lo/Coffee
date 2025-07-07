@@ -95,7 +95,7 @@ async function connectToWhatsApp() {
             }
         } catch (error) {
             console.error("❌ خطأ في معالجة الرسالة:", error);
-            await sock.sendMessage(sender, { text: "⚠️ حدث خطأ غير متوقع!" });
+            console.error("⚠️ حدث خطأ غير متوقع:", error);
         }
     });
 }
@@ -137,7 +137,7 @@ async function handleNewUser(sock, sender) {
         lastMessageTimestamps.set(sender, Date.now()); // تسجيل وقت إرسال القائمة
     } catch (error) {
         console.error("❌ خطأ في معالجة مستخدم جديد:", error);
-        await sock.sendMessage(sender, { text: "⚠️ حدث خطأ أثناء تحميل القائمة!" });
+        console.error("⚠️ حدث خطأ أثناء تحميل القائمة:", error);
     }
 }
 
