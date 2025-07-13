@@ -157,6 +157,8 @@ ${menuText}`
     }
 }
 
+
+
 // 🔹 معالجة المستخدم الحالي
 async function handleExistingUser(sock, sender, text) {
     const userState = respondedMessages.get(sender);
@@ -201,7 +203,7 @@ async function handleExistingUser(sock, sender, text) {
                 lastMessageTimestamps.delete(sender);
             }
         } else {
-            console.log("⚠️ الرجاء اختيار خيار صالح من القائمة.");
+            await sock.sendMessage(sender, { text: "⚠️ الرجاء اختيار خيار صالح من القائمة." });
             lastMessageTimestamps.set(sender, Date.now());
         }
     } else if (userState === "CUSTOMER_SERVICE") {
@@ -214,6 +216,15 @@ async function handleExistingUser(sock, sender, text) {
         if (currentTime - lastMessageTime > INACTIVITY_TIMEOUT) {
             await handleNewUser(sock, sender); // إعادة إرسال القائمة الرئيسية
             pendingData.delete(sender); // حذف البيانات المؤقتة
+            return;
+        }
+
+        // التحقق مما إذا كان النص رقمًا
+        if (/^\d+$/.test(text)) {
+            
+            respondedMessages.set(sender, "MAIN_MENU");
+            pendingData.delete(sender); // حذف البيانات المؤقتة
+            await handleNewUser(sock, sender); // إعادة إرسال القائمة الرئيسية
             return;
         }
 
@@ -246,11 +257,11 @@ async function handleExistingUser(sock, sender, text) {
                 respondedMessages.delete(sender);
                 lastMessageTimestamps.delete(sender);
             } else {
-                console.log("⚠️ الرجاء اختيار خيار صالح من القائمة.");
+                await sock.sendMessage(sender, { text: "⚠️ الرجاء اختيار خيار صالح من القائمة." });
                 lastMessageTimestamps.set(sender, Date.now());
             }
         } else {
-            console.log("⚠️ خطأ: القائمة الفرعية غير متوفرة.");
+            await sock.sendMessage(sender, { text: "⚠️ خطأ: القائمة الفرعية غير متوفرة." });
             lastMessageTimestamps.set(sender, Date.now());
         }
     }
