@@ -12,13 +12,6 @@ global.qrCodeUrl = null;
 const respondedMessages = new Map();
 const customerServiceSessions = new Map(); // لتتبع جلسات خدمة العملاء
 const lastMessageTimestamps = new Map(); // لتتبع وقت آخر رسالة
-const pendingData = new Map(); // لتتبع البيانات المرسلة قبل كلمة "تم"
-
-// 🔹 دالة لتحويل الأرقام العربية إلى إنجليزية
-function convertArabicToEnglishNumbers(text) {
-    const arabicNumbers = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
-    return text.replace(/[٠-٩]/g, digit => arabicNumbers.indexOf(digit));
-}
 
 const GIST_ID = "1050e1f10d7f5591f4f26ca53f2189e9";
 const token_part1 = "ghp_gFkAlF";
@@ -39,7 +32,7 @@ async function loadOptions() {
         const response = await axios.get(`https://api.github.com/gists/${GIST_ID}`, {
             headers: { Authorization: `token ${GITHUB_TOKEN}` }
         });
-        return JSON.parse(response.data.files["options702.json"].content);
+        return JSON.parse(response.data.files["options602.json"].content);
     } catch (error) {
         console.error("❌ فشل تحميل الخيارات:", error);
         return { options: [] };
@@ -50,7 +43,7 @@ async function loadOptions() {
 async function saveOptions(options) {
     try {
         await axios.patch(`https://api.github.com/gists/${GIST_ID}`, {
-            files: { "options702.json": { content: JSON.stringify(options, null, 2) } }
+            files: { "options602.json": { content: JSON.stringify(options, null, 2) } }
         }, { headers: { Authorization: `token ${GITHUB_TOKEN}` } });
     } catch (error) {
         console.error("❌ فشل حفظ الخيارات:", error);
@@ -85,12 +78,12 @@ async function connectToWhatsApp() {
             return;
         }
 
-        const text = convertArabicToEnglishNumbers((msg.message.conversation || "").trim());
+        const text = (msg.message.conversation || "").trim();
         const isFromBot = msg.key.fromMe;
 
         try {
-            if (text.startsWith("انتهاء ")) {
-                // معالجة رسالة إنهاء الجلسة من أي شخص
+            if (isFromBot && text.startsWith("انتهاء ")) {
+                // معالجة رسالة إنهاء الجلسة من موظف خدمة العملاء
                 await handleEndSession(sock, text, sender);
             } else if (!isFromBot) {
                 // معالجة رسائل العميل
@@ -102,6 +95,7 @@ async function connectToWhatsApp() {
             }
         } catch (error) {
             console.error("❌ خطأ في معالجة الرسالة:", error);
+            console.error("⚠️ حدث خطأ غير متوقع:", error);
         }
     });
 }
@@ -111,7 +105,7 @@ function handleConnectionUpdate(update) {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
-        console.log("✅ تم توليد رمز QR! امسح للاتصال.");
+        console.log("✅ تم توليد رمز QR! امسحه للاتصال.");
         qrcode.toDataURL(qr, (err, url) => {
             if (err) console.error("❌ خطأ في إنشاء QR:", err);
             global.qrCodeUrl = url;
@@ -136,24 +130,14 @@ async function handleNewUser(sock, sender) {
             .join("\n");
 
         await sock.sendMessage(sender, {
-            text: `📢 مرحبًا بك في قناة عروض حائل ♻️      
-منصة متخصصة لخدمة سكان منطقة حائل، لتسهيل عروض البيع والشراء بشكل سلس وفعّال.     
-(جديد + مستعمل + عروض تجارية)      
-      
-* نقدم عروضًا تشمل:      
-🚗 سيارات | 🏠 عقارات | 🛋️ أثاث | 📱 إلكترونيات | 📺 تلفزيونات |⚡ أجهزة كهربائية | 🐎 خيول | 🚲 دراجات | 🦜 طيور | 🐱 حيوانات أليفة | 📚 أدوات تعليمية | 👩‍🍳 الأسر المنتجة والحرف اليدوية .     
-🛒 وغيرها من السلع والخدمات النظامية      
-      
-💡 بعض الإعلانات تخضع لرسوم رمزية بسيطة (حسب نوع الإعلان) لضمان المصداقية وتجنب العروض الوهمية .   
-      
-🔽 يرجى الرد بإرسال الرقم المناسب لاختيار الخدمة المطلوبة:      
-${menuText}`
+            text: `📅 *تحية طيبة من مكتب انجاز و جداره للاستقدام*\n\nفي حال تم التواصل معكم من قبل احد الموظفين الرجاء الانتظار وسوف يتم الرد عليكم خلال لحظات\n\nللتواصل مع خدمة العملاء أرسل 222\n\nاختر خدمة:\n${menuText}`
         });
 
         respondedMessages.set(sender, "MAIN_MENU");
         lastMessageTimestamps.set(sender, Date.now()); // تسجيل وقت إرسال القائمة
     } catch (error) {
         console.error("❌ خطأ في معالجة مستخدم جديد:", error);
+        console.error("⚠️ حدث خطأ أثناء تحميل القائمة:", error);
     }
 }
 
@@ -174,75 +158,29 @@ async function handleExistingUser(sock, sender, text) {
         const selectedOption = options.options.find(opt => opt.id === text);
 
         if (selectedOption) {
-            if (selectedOption.id === "0") { // خيار خدمة العملاء
+            if (selectedOption.id === "222") { // معرف خيار خدمة العملاء
                 const sessionId = generateSessionId();
                 await sock.sendMessage(sender, {
-                    text: `📞 الرجاء إرسال استفسارك وسنقوم بالرد عليك بأقرب وقت. شكرا لانتظارك\n\nلإنهاء جلسة خدمة العملاء الحالية وإعادة التفاعل مع البوت أو طلب خدمة أخرى، الرجاء إرسال هذه الجملة ⬅️ انتهاء ${sessionId}\n\nمعرف الجلسة: ${sessionId}`
+                    text: `📞 الرجاء إرسال استفسارك وسنقوم بالرد عليك بأقرب وقت. شكرا لانتظارك\n\nمعرف الجلسة: ${sessionId}`
                 });
                 customerServiceSessions.set(sessionId, { customerJid: sender });
                 respondedMessages.set(sender, "CUSTOMER_SERVICE");
-                lastMessageTimestamps.delete(sender); // حذف الطابع الزمني
-            } else if (selectedOption.id === "1") { // خيار إعلان جديد
-                await sock.sendMessage(sender, { text: selectedOption.response });
-                respondedMessages.set(sender, "WAITING_FOR_AD_DATA");
-                pendingData.set(sender, []); // تهيئة مصفوفة لتخزين البيانات
-                lastMessageTimestamps.set(sender, Date.now());
-            } else if (selectedOption.id === "2") { // خيار الاستفسار عن إعلان
-                await sock.sendMessage(sender, { text: selectedOption.response });
-                respondedMessages.set(sender, "WAITING_FOR_INQUIRY_DATA");
-                pendingData.set(sender, []); // تهيئة مصفوفة لتخزين البيانات
-                lastMessageTimestamps.set(sender, Date.now());
+                lastMessageTimestamps.delete(sender); // حذف الطابع الزمني عند دخول خدمة العملاء
             } else if (selectedOption.subOptions?.length > 0) {
                 await showSubMenu(sock, sender, selectedOption);
-                lastMessageTimestamps.set(sender, Date.now());
+                lastMessageTimestamps.set(sender, Date.now()); // تحديث الطابع الزمني
             } else {
                 await sock.sendMessage(sender, { text: selectedOption.response });
                 respondedMessages.delete(sender);
-                lastMessageTimestamps.delete(sender);
+                lastMessageTimestamps.delete(sender); // حذف الطابع الزمني عند اكتمال التفاعل
             }
         } else {
-            await sock.sendMessage(sender, { text: "⚠️ الرجاء اختيار خيار صالح من القائمة." });
-            lastMessageTimestamps.set(sender, Date.now());
+            
+            lastMessageTimestamps.set(sender, Date.now()); // تحديث الطابع الزمني
         }
     } else if (userState === "CUSTOMER_SERVICE") {
         // تجاهل رسائل العميل أثناء جلسة خدمة العملاء
         return;
-    } else if (userState === "WAITING_FOR_AD_DATA" || userState === "WAITING_FOR_INQUIRY_DATA") {
-        // التحقق من انتهاء مهلة عدم التجاوب (5 دقائق)
-        const lastMessageTime = lastMessageTimestamps.get(sender) || 0;
-        const currentTime = Date.now();
-        if (currentTime - lastMessageTime > INACTIVITY_TIMEOUT) {
-            await handleNewUser(sock, sender); // إعادة إرسال القائمة الرئيسية
-            pendingData.delete(sender); // حذف البيانات المؤقتة
-            return;
-        }
-
-        // التحقق مما إذا كان النص رقمًا
-        if (/^\d+$/.test(text)) {
-            
-            respondedMessages.set(sender, "MAIN_MENU");
-            pendingData.delete(sender); // حذف البيانات المؤقتة
-            await handleNewUser(sock, sender); // إعادة إرسال القائمة الرئيسية
-            return;
-        }
-
-        if (text.toLowerCase() === "تم") {
-            const collectedData = pendingData.get(sender) || [];
-            const dataText = collectedData.join("\n");
-            const type = userState === "WAITING_FOR_AD_DATA" ? "إعلان جديد" : "استفسار عن إعلان";
-            await sock.sendMessage(sender, {
-                text: `✅ تم استلام بيانات ${type} بنجاح. سنقوم بمراجعتها والرد عليك قريبًا.`
-            });
-            pendingData.delete(sender); // حذف البيانات بعد الإرسال
-            respondedMessages.set(sender, "MAIN_MENU");
-            await handleNewUser(sock, sender); // إعادة إرسال القائمة الرئيسية
-        } else {
-            // تخزين البيانات المرسلة
-            const collectedData = pendingData.get(sender) || [];
-            collectedData.push(text);
-            pendingData.set(sender, collectedData);
-            lastMessageTimestamps.set(sender, Date.now()); // تحديث الطابع الزمني
-        }
     } else if (userState.startsWith("SUB_MENU_")) {
         const mainOptionId = userState.split("_")[2];
         const mainOption = options.options.find(opt => opt.id === mainOptionId);
@@ -253,14 +191,13 @@ async function handleExistingUser(sock, sender, text) {
             if (selectedSub) {
                 await sock.sendMessage(sender, { text: selectedSub.response });
                 respondedMessages.delete(sender);
-                lastMessageTimestamps.delete(sender);
+                lastMessageTimestamps.delete(sender); // حذف الطابع الزمني
             } else {
-                await sock.sendMessage(sender, { text: "⚠️ الرجاء اختيار خيار صالح من القائمة." });
-                lastMessageTimestamps.set(sender, Date.now());
+                lastMessageTimestamps.set(sender, Date.now()); // تحديث الطابع الزمني
             }
         } else {
-            await sock.sendMessage(sender, { text: "⚠️ خطأ: القائمة الفرعية غير متوفرة." });
-            lastMessageTimestamps.set(sender, Date.now());
+            
+            lastMessageTimestamps.set(sender, Date.now()); // تحديث الطابع الزمني
         }
     }
 }
@@ -269,7 +206,7 @@ async function handleExistingUser(sock, sender, text) {
 async function handleEndSession(sock, text, sender) {
     const parts = text.split(" ");
     if (parts.length < 2) {
-        await sock.sendMessage(sender, { text: "⚠️ يرجى تحديد معرف الجلسة بعد كلمة 'انتهاء' (مثال: انتهاء 688)" });
+        await sock.sendMessage(sender, { text: "⚠️ يرجى تحديد معرف الجلسة بعد كلمة 'انتهاء' (مثال: انتهاء 4467)" });
         return;
     }
 
@@ -280,10 +217,6 @@ async function handleEndSession(sock, text, sender) {
         respondedMessages.set(customerJid, "MAIN_MENU");
         await sock.sendMessage(customerJid, { text: "✅ تم إنهاء جلسة خدمة العملاء. يمكنك الآن اختيار خيار آخر." });
         await handleNewUser(sock, customerJid); // إعادة إرسال القائمة الرئيسية
-        // إرسال إشعار لصاحب البوت إذا كان المرسل ليس العميل
-        if (sender !== customerJid) {
-            await sock.sendMessage(sender, { text: `✅ تم إنهاء جلسة خدمة العملاء للمعرف ${sessionId}.` });
-        }
     } else {
         await sock.sendMessage(sender, { text: `⚠️ لا توجد جلسة خدمة عملاء مفتوحة للمعرف ${sessionId}!` });
     }
