@@ -10,9 +10,13 @@ const app = express();
 const TARGET_GROUP = "120363403583957683@g.us"; // معرف الجروب من الرابط: https://chat.whatsapp.com/LtHfE2bNiw80dMPzOMpAyi
 global.qrCodeUrl = null;
 
-// 🔹 دالة لتسجيل اللوغ
+// 🔹 دالة لتسجيل اللوغ في ملف
 async function logToFile(message) {
-    await fs.appendFile("bot.log", `${new Date().toISOString()} - ${message}\n`);
+    try {
+        await fs.appendFile("bot.log", `${new Date().toISOString()} - ${message}\n`);
+    } catch (error) {
+        console.error(`❌ فشل تسجيل اللوغ: ${error.message}`);
+    }
 }
 
 // 🔹 دالة الاتصال بواتساب
@@ -34,32 +38,28 @@ async function connectToWhatsApp() {
         // 🔹 التحقق من LID ومحاولة استخراج رقم الهاتف
         let senderNumber;
         if (isGroupMessage && sender && sender.endsWith("@lid")) {
-            // محاولة جلب رقم الهاتف من معلومات الاتصال
-            try {
-                const contact = await sock.getContactInfo(sender);
-                const phoneNumber = contact?.verifiedNumber || contact?.number || null;
-                senderNumber = phoneNumber ? phoneNumber.split("@")[0] : null;
-                if (!senderNumber) {
-                    await logToFile(`❌ معرف LID (${sender}) بدون رقم هاتف متاح! الرسالة لن يتم توجيهها.`);
-                    console.error(`❌ معرف LID (${sender}) بدون رقم هاتف متاح! الرسالة لن يتم توجيهها.`);
-                    return;
-                }
-            } catch (error) {
-                await logToFile(`❌ فشل جلب معلومات الاتصال لـ ${sender}: ${error.message}`);
-                console.error(`❌ فشل جلب معلومات الاتصال لـ ${sender}: ${error.message}`);
+            console.warn(`⚠️ معرف LID (${sender}) تم الكشف عنه. قد لا يكون رقم الهاتف متاحًا.`);
+            await logToFile(`LID detected: ${sender}, message will be skipped unless phone number is found`);
+            // محاولة استخراج رقم الهاتف من messageStubParameters
+            const phoneNumber = msg.messageStubParameters?.find(param => param.includes("@s.whatsapp.net"))?.split("@")[0] || null;
+            if (!phoneNumber) {
+                console.error(`❌ معرف LID (${sender}) بدون رقم هاتف متاح! الرسالة لن يتم توجيهها.`);
+                await logToFile(`Skipped message from LID ${sender}: No phone number available`);
                 return;
             }
+            senderNumber = phoneNumber;
         } else if (sender) {
             senderNumber = sender.split("@")[0];
         } else {
-            await logToFile("❌ لا يمكن تحديد المرسل لهذه الرسالة!");
             console.error("❌ لا يمكن تحديد المرسل لهذه الرسالة!");
+            await logToFile("Skipped message: No sender identified");
             return;
         }
 
         // 🔹 تسجيل معلومات للتصحيح
-        await logToFile(`Message received: remoteJid=${msg.key.remoteJid}, participant=${msg.key.participant}, isGroup=${isGroupMessage}, sender=${sender}, senderNumber=${senderNumber}`);
-        console.log(`Message received: remoteJid=${msg.key.remoteJid}, participant=${msg.key.participant}, isGroup=${isGroupMessage}, sender=${sender}, senderNumber=${senderNumber}`);
+        const logMessage = `Message received: remoteJid=${msg.key.remoteJid}, participant=${msg.key.participant}, isGroup=${isGroupMessage}, sender=${sender}, senderNumber=${senderNumber}`;
+        console.log(logMessage);
+        await logToFile(logMessage);
 
         let text;
         try {
@@ -71,8 +71,8 @@ async function connectToWhatsApp() {
                 ""
             ).trim();
         } catch (error) {
-            await logToFile(`❌ فشل فك تشفير الرسالة من ${sender}: ${error.message}`);
-            console.error(`❌ فشل فك تشفير الرسالة من ${sender}: ${error.message}`);
+            console.error(`❌ فشل فك تشفير الرسالة من ${senderNumber}: ${error.message}`);
+            await logToFile(`Decryption failed for ${senderNumber}: ${error.message}`);
             return; // تخطي الرسائل التي لا يمكن فك تشفيرها
         }
 
@@ -84,12 +84,13 @@ async function connectToWhatsApp() {
         if (containsKeyword && !containsLocationLink) {
             // 🔹 إعادة توجيه الرسالة إلى الجروب مع رابط محادثة المرسل
             const forwardedMessage = `رسالة من: https://wa.me/${senderNumber}\n\n${text}`;
-            await logToFile(`Forwarding message from ${senderNumber}: ${text}`);
             console.log(`Forwarding message from ${senderNumber}: ${text}`);
+            await logToFile(`Forwarding message from ${senderNumber}: ${text}`);
             await sock.sendMessage(TARGET_GROUP, { text: forwardedMessage });
         } else {
-            await logToFile(`Message not forwarded from ${senderNumber}. Keywords: ${containsKeyword}, Location Link: ${containsLocationLink}`);
-            console.log(`Message not forwarded from ${senderNumber}. Keywords: ${containsKeyword}, Location Link: ${containsLocationLink}`);
+            const reason = `Keywords: ${containsKeyword}, Location Link: ${containsLocationLink}`;
+            console.log(`Message not forwarded from ${senderNumber}. ${reason}`);
+            await logToFile(`Message not forwarded from ${senderNumber}. ${reason}`);
         }
     });
 }
