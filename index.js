@@ -21,8 +21,19 @@ async function connectToWhatsApp() {
         const msg = messages[0];
         if (!msg.message || msg.key.fromMe) return;
 
-        // 🔹 تحديد المرسل (المستخدم في الجروب أو المحادثة الفردية)
-        const sender = msg.key.participant || msg.key.remoteJid;
+        // 🔹 تحديد ما إذا كانت الرسالة من جروب
+        const isGroupMessage = msg.key.remoteJid.endsWith("@g.us");
+        const sender = isGroupMessage ? msg.key.participant : msg.key.remoteJid;
+
+        // 🔹 تسجيل معلومات للتصحيح
+        console.log(`Message received: remoteJid=${msg.key.remoteJid}, participant=${msg.key.participant}, isGroup=${isGroupMessage}, sender=${sender}`);
+
+        // 🔹 التحقق من وجود المرسل
+        if (!sender) {
+            console.error("❌ لا يمكن تحديد المرسل لهذه الرسالة!");
+            return;
+        }
+
         const text = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").trim();
 
         // 🔹 التحقق من وجود الكلمات المفتاحية وعدم وجود أي رابط لوكيشن
@@ -34,7 +45,10 @@ async function connectToWhatsApp() {
             // 🔹 إعادة توجيه الرسالة إلى الجروب مع رابط محادثة المرسل
             const senderNumber = sender.split("@")[0];
             const forwardedMessage = `رسالة من: https://wa.me/${senderNumber}\n\n${text}`;
+            console.log(`Forwarding message from ${sender}: ${text}`);
             await sock.sendMessage(TARGET_GROUP, { text: forwardedMessage });
+        } else {
+            console.log(`Message not forwarded from ${sender}. Keywords: ${containsKeyword}, Location Link: ${containsLocationLink}`);
         }
     });
 }
