@@ -21,7 +21,8 @@ async function connectToWhatsApp() {
         const msg = messages[0];
         if (!msg.message || msg.key.fromMe) return;
 
-        const sender = msg.key.remoteJid;
+        // 🔹 تحديد المرسل (المستخدم في الجروب أو المحادثة الفردية)
+        const sender = msg.key.participant || msg.key.remoteJid;
         const text = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").trim();
 
         // 🔹 التحقق من وجود الكلمات المفتاحية وعدم وجود أي رابط لوكيشن
