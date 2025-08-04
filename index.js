@@ -23,18 +23,35 @@ async function connectToWhatsApp() {
 
         // 🔹 تحديد ما إذا كانت الرسالة من جروب
         const isGroupMessage = msg.key.remoteJid.endsWith("@g.us");
-        const sender = isGroupMessage ? msg.key.participant : msg.key.remoteJid;
+        let sender = isGroupMessage ? msg.key.participant : msg.key.remoteJid;
 
-        // 🔹 تسجيل معلومات للتصحيح
-        console.log(`Message received: remoteJid=${msg.key.remoteJid}, participant=${msg.key.participant}, isGroup=${isGroupMessage}, sender=${sender}`);
-
-        // 🔹 التحقق من وجود المرسل
-        if (!sender) {
+        // 🔹 التحقق من LID ومحاولة استخراج رقم الهاتف
+        let senderNumber;
+        if (isGroupMessage && sender && sender.endsWith("@lid")) {
+            // محاولة استخراج رقم الهاتف من messageStubParameters أو pushName
+            const phoneNumber = msg.messageStubParameters?.find(param => param.includes("@s.whatsapp.net"))?.split("@")[0] || null;
+            senderNumber = phoneNumber || (msg.pushName ? null : null); // pushName قد لا يكون رقم هاتف
+            if (!senderNumber) {
+                console.error(`❌ معرف LID (${sender}) بدون رقم هاتف متاح! الرسالة لن يتم توجيهها.`);
+                return;
+            }
+        } else if (sender) {
+            senderNumber = sender.split("@")[0];
+        } else {
             console.error("❌ لا يمكن تحديد المرسل لهذه الرسالة!");
             return;
         }
 
-        const text = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").trim();
+        // 🔹 تسجيل معلومات للتصحيح
+        console.log(`Message received: remoteJid=${msg.key.remoteJid}, participant=${msg.key.participant}, isGroup=${isGroupMessage}, sender=${sender}, senderNumber=${senderNumber}`);
+
+        let text;
+        try {
+            text = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").trim();
+        } catch (error) {
+            console.error(`❌ فشل فك تشفير الرسالة من ${sender}: ${error.message}`);
+            return; // تخطي الرسائل التي لا يمكن فك تشفيرها
+        }
 
         // 🔹 التحقق من وجود الكلمات المفتاحية وعدم وجود أي رابط لوكيشن
         const keywords = ["الزبون", "المشتري", "المشترى", "مطلوب"];
@@ -43,12 +60,11 @@ async function connectToWhatsApp() {
 
         if (containsKeyword && !containsLocationLink) {
             // 🔹 إعادة توجيه الرسالة إلى الجروب مع رابط محادثة المرسل
-            const senderNumber = sender.split("@")[0];
             const forwardedMessage = `رسالة من: https://wa.me/${senderNumber}\n\n${text}`;
-            console.log(`Forwarding message from ${sender}: ${text}`);
+            console.log(`Forwarding message from ${senderNumber}: ${text}`);
             await sock.sendMessage(TARGET_GROUP, { text: forwardedMessage });
         } else {
-            console.log(`Message not forwarded from ${sender}. Keywords: ${containsKeyword}, Location Link: ${containsLocationLink}`);
+            console.log(`Message not forwarded from ${senderNumber}. Keywords: ${containsKeyword}, Location Link: ${containsLocationLink}`);
         }
     });
 }
