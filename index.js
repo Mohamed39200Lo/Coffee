@@ -1,3 +1,4 @@
+
 const makeWASocket = require("@whiskeysockets/baileys").default;
 const { useMultiFileAuthState } = require("@whiskeysockets/baileys");
 const qrcode = require("qrcode");
@@ -21,34 +22,8 @@ async function connectToWhatsApp() {
         const msg = messages[0];
         if (!msg.message || msg.key.fromMe) return;
 
-        // 🔹 تحديد ما إذا كانت الرسالة من جروب
-        const isGroupMessage = msg.key.remoteJid.endsWith("@g.us");
-        let senderNumber;
-
-        if (isGroupMessage) {
-            // 🔹 استخدام participant_pn للحصول على رقم الهاتف
-            const participantPn = msg.participant_pn || null;
-            if (participantPn && participantPn.includes("@s.whatsapp.net")) {
-                senderNumber = participantPn.split("@")[0];
-            } else {
-                console.error(`❌ لا يمكن الحصول على رقم الهاتف من participant_pn لـ ${msg.key.participant}. الرسالة لن يتم توجيهها.`);
-                return;
-            }
-        } else {
-            // 🔹 للمحادثات الفردية، استخدام remoteJid
-            senderNumber = msg.key.remoteJid.split("@")[0];
-        }
-
-        // 🔹 تسجيل معلومات للتصحيح
-        console.log(`Message received: remoteJid=${msg.key.remoteJid}, participant=${msg.key.participant}, participant_pn=${msg.participant_pn}, isGroup=${isGroupMessage}, senderNumber=${senderNumber}`);
-
-        let text;
-        try {
-            text = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").trim();
-        } catch (error) {
-            console.error(`❌ فشل فك تشفير الرسالة من ${senderNumber}: ${error.message}`);
-            return; // تخطي الرسائل التي لا يمكن فك تشفيرها
-        }
+        const sender = msg.key.remoteJid;
+        const text = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").trim();
 
         // 🔹 التحقق من وجود الكلمات المفتاحية وعدم وجود أي رابط لوكيشن
         const keywords = ["الزبون", "المشتري", "المشترى", "مطلوب"];
@@ -57,11 +32,9 @@ async function connectToWhatsApp() {
 
         if (containsKeyword && !containsLocationLink) {
             // 🔹 إعادة توجيه الرسالة إلى الجروب مع رابط محادثة المرسل
+            const senderNumber = sender.split("@")[0];
             const forwardedMessage = `رسالة من: https://wa.me/${senderNumber}\n\n${text}`;
-            console.log(`Forwarding message from ${senderNumber}: ${text}`);
             await sock.sendMessage(TARGET_GROUP, { text: forwardedMessage });
-        } else {
-            console.log(`Message not forwarded from ${senderNumber}. Keywords: ${containsKeyword}, Location Link: ${containsLocationLink}`);
         }
     });
 }
@@ -100,3 +73,4 @@ app.get("/", (req, res) => {
 
 app.listen(3000, () => console.log("🚀 السيرفر يعمل على http://localhost:3000"));
 connectToWhatsApp();
+
