@@ -23,33 +23,30 @@ async function connectToWhatsApp() {
 
         // 🔹 تحديد ما إذا كانت الرسالة من جروب
         const isGroupMessage = msg.key.remoteJid.endsWith("@g.us");
-        let sender = isGroupMessage ? msg.key.participant : msg.key.remoteJid;
-
-        // 🔹 التحقق من LID واستخدام participant_pn للحصول على رقم الهاتف
         let senderNumber;
-        if (isGroupMessage && sender && sender.endsWith("@lid")) {
-            // استخدام participant_pn إذا كان متاحًا
-            const phoneNumber = msg.messageStubParameters?.participant_pn?.split("@")[0] || null;
-            if (!phoneNumber) {
-                console.error(`❌ معرف LID (${sender}) بدون رقم هاتف (participant_pn غير متاح)! الرسالة لن يتم توجيهها.`);
+
+        if (isGroupMessage) {
+            // 🔹 استخدام participant_pn للحصول على رقم الهاتف
+            const participantPn = msg.participant_pn || null;
+            if (participantPn && participantPn.includes("@s.whatsapp.net")) {
+                senderNumber = participantPn.split("@")[0];
+            } else {
+                console.error(`❌ لا يمكن الحصول على رقم الهاتف من participant_pn لـ ${msg.key.participant}. الرسالة لن يتم توجيهها.`);
                 return;
             }
-            senderNumber = phoneNumber;
-        } else if (sender) {
-            senderNumber = sender.split("@")[0];
         } else {
-            console.error("❌ لا يمكن تحديد المرسل لهذه الرسالة!");
-            return;
+            // 🔹 للمحادثات الفردية، استخدام remoteJid
+            senderNumber = msg.key.remoteJid.split("@")[0];
         }
 
         // 🔹 تسجيل معلومات للتصحيح
-        console.log(`Message received: remoteJid=${msg.key.remoteJid}, participant=${msg.key.participant}, participant_pn=${msg.messageStubParameters?.participant_pn}, isGroup=${isGroupMessage}, sender=${sender}, senderNumber=${senderNumber}`);
+        console.log(`Message received: remoteJid=${msg.key.remoteJid}, participant=${msg.key.participant}, participant_pn=${msg.participant_pn}, isGroup=${isGroupMessage}, senderNumber=${senderNumber}`);
 
         let text;
         try {
-            text = (msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || "").trim();
+            text = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").trim();
         } catch (error) {
-            console.error(`❌ فشل فك تشفير الرسالة من ${sender}: ${error.message}`);
+            console.error(`❌ فشل فك تشفير الرسالة من ${senderNumber}: ${error.message}`);
             return; // تخطي الرسائل التي لا يمكن فك تشفيرها
         }
 
