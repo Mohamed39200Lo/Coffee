@@ -11,6 +11,7 @@ const TARGET_GROUP = "120363403583957683@g.us"; // معرف الجروب من ا
 global.qrCodeUrl = null;
 
 // 🔹 دالة الاتصال بواتساب
+// 🔹 دالة الاتصال بواتساب
 async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState("./auth");
     const sock = makeWASocket({ auth: state, printQRInTerminal: false });
@@ -22,7 +23,9 @@ async function connectToWhatsApp() {
         const msg = messages[0];
         if (!msg.message || msg.key.fromMe) return;
 
-        const sender = msg.key.remoteJid;
+        // 🔹 تحديد معرف المرسل (رقم الشخص في حالة الجروب أو المحادثة الفردية)
+        const isGroup = msg.key.remoteJid.includes("@g.us");
+        const sender = isGroup ? msg.key.participant : msg.key.remoteJid;
         const text = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").trim();
 
         // 🔹 التحقق من وجود الكلمات المفتاحية وعدم وجود أي رابط لوكيشن
@@ -38,6 +41,7 @@ async function connectToWhatsApp() {
         }
     });
 }
+        
 
 // 🔹 معالجة حالة الاتصال
 function handleConnectionUpdate(update) {
