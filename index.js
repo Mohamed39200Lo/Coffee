@@ -25,9 +25,9 @@ async function connectToWhatsApp() {
         const msg = messages[0];
         if (!msg.message || msg.key.fromMe) return;
 
-        // 🔹 تحديد المرسل باستخدام participant_pn إذا كانت متوفرة
-        const sender = msg.messageStubParameters?.participant_pn || msg.key.participant || msg.key.remoteJid;
-        const text = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").trim();
+        // 🔹 تحديد المرسل باستخدام participant_pn من msgAttrs
+        const sender = msg.messageStubParameters?.participant_pn || msg.pushName?.participant_pn || msg.key.participant || msg.key.remoteJid;
+        const text = (msg.messageStanza?.conversation || msg.message.conversation || msg.message.extendedTextMessage?.text || "").trim();
 
         // 🔹 التحقق من وجود الكلمات المفتاحية وعدم وجود أي رابط لوكيشن
         const keywords = ["الزبون", "المشتري", "المشترى", "مطلوب"];
@@ -42,6 +42,7 @@ async function connectToWhatsApp() {
         }
     });
 }
+
 // 🔹 معالجة حالة الاتصال
 function handleConnectionUpdate(update) {
     const { connection, lastDisconnect, qr } = update;
