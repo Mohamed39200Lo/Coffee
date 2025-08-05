@@ -14,6 +14,10 @@ global.qrCodeUrl = null;
 // 🔹 دالة الاتصال بواتساب
 
 // 🔹 دالة الاتصال بواتساب
+
+
+
+// 🔹 دالة الاتصال بواتساب
 async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState("./auth");
     const sock = makeWASocket({ auth: state, printQRInTerminal: false });
@@ -22,23 +26,28 @@ async function connectToWhatsApp() {
     sock.ev.on("connection.update", handleConnectionUpdate);
 
     sock.ev.on("messages.upsert", async ({ messages }) => {
-        const msg = messages[0];
-        if (!msg.message || msg.key.fromMe) return;
+        try {
+            const msg = messages[0];
+            if (!msg.message || msg.key.fromMe) return;
 
-        // 🔹 تحديد المرسل باستخدام participant_pn من msgAttrs
-        const sender = msg.messageStubParameters?.participant_pn || msg.pushName?.participant_pn || msg.key.participant || msg.key.remoteJid;
-        const text = (msg.messageStanza?.conversation || msg.message.conversation || msg.message.extendedTextMessage?.text || "").trim();
+            // 🔹 تحديد المرسل باستخدام participant_pn
+            // تحقق من msg.messageStubParameters أو msgAttrs إذا كانت متوفرة
+            const sender = msg.messageStubParameters?.participant_pn || msg.key.participant_pn || msg.key.participant || msg.key.remoteJid;
+            const text = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").trim();
 
-        // 🔹 التحقق من وجود الكلمات المفتاحية وعدم وجود أي رابط لوكيشن
-        const keywords = ["الزبون", "المشتري", "المشترى", "مطلوب"];
-        const containsKeyword = keywords.some(keyword => text.includes(keyword));
-        const containsLocationLink = /https?:\/\/.*(maps|location|goo\.gl\/maps|maps\.app\.goo\.gl|maps\.google\.com|maps\.apple\.com)/i.test(text);
+            // 🔹 التحقق من وجود الكلمات المفتاحية وعدم وجود أي رابط لوكيشن
+            const keywords = ["الزبون", "المشتري", "المشترى", "مطلوب"];
+            const containsKeyword = keywords.some(keyword => text.includes(keyword));
+            const containsLocationLink = /https?:\/\/.*(maps|location|goo\.gl\/maps|maps\.app\.goo\.gl|maps\.google\.com|maps\.apple\.com)/i.test(text);
 
-        if (containsKeyword && !containsLocationLink) {
-            // 🔹 إعادة توجيه الرسالة إلى الجروب مع رابط محادثة المرسل
-            const senderNumber = sender.split("@")[0];
-            const forwardedMessage = `رسالة من: https://wa.me/${senderNumber}\n\n${text}`;
-            await sock.sendMessage(TARGET_GROUP, { text: forwardedMessage });
+            if (containsKeyword && !containsLocationLink) {
+                // 🔹 إعادة توجيه الرسالة إلى الجروب مع رابط محادثة المرسل
+                const senderNumber = sender.split("@")[0];
+                const forwardedMessage = `رسالة من: https://wa.me/${senderNumber}\n\n${text}`;
+                await sock.sendMessage(TARGET_GROUP, { text: forwardedMessage });
+            }
+        } catch (error) {
+            console.error("❌ خطأ في معالجة الرسالة:", error);
         }
     });
 }
@@ -64,6 +73,9 @@ function handleConnectionUpdate(update) {
         global.qrCodeUrl = null; // مسح رمز QR بعد الاتصال الناجح
     }
 }
+
+
+
 
 // 🔹 إعدادات السيرفر
 app.use(express.json());
