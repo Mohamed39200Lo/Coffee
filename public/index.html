@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>لوحة تحكم مطعم أنتيكا</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Arabic:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Noto Sans Arabic', sans-serif;
+      background: linear-gradient(to bottom, #f3f4f6, #e5e7eb);
+      color: #1f2937;
+      min-height: 100vh;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 16px;
+    }
+    .header {
+      background: linear-gradient(to right, #3b82f6, #1d4ed8);
+      color: white;
+      padding: 1.5rem;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      margin-bottom: 1.5rem;
+      text-align: center;
+    }
+    .section {
+      background: white;
+      padding: 1.5rem;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      margin-bottom: 1.5rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      border-radius: 8px;
+      overflow: hidden;
+      background: white;
+    }
+    th, td {
+      padding: 12px;
+      text-align: right;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    th {
+      background: #f9fafb;
+      font-weight: 600;
+    }
+    td {
+      background: white;
+    }
+    .table-container {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    input, textarea, select {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      background: #f9fafb;
+      transition: border-color 0.3s;
+    }
+    input:focus, textarea:focus, select:focus {
+      outline: none;
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+    button {
+      transition: all 0.3s ease;
+      padding: 8px 16px;
+      border-radius: 6px;
+    }
+    button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+    .error {
+      color: #ef4444;
+      font-size: 0.9rem;
+    }
+    .success {
+      color: #10b981;
+      font-size: 0.9rem;
+    }
+    @media (max-width: 640px) {
+      .container { padding: 12px; }
+      h1 { font-size: 1.5rem; }
+      h2 { font-size: 1.25rem; }
+      .grid-cols-1 { grid-template-columns: 1fr; }
+      table { font-size: 0.9rem; }
+      th, td { padding: 8px; }
+      button { padding: 6px 12px; font-size: 0.9rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <h1 class="text-2xl md:text-3xl font-bold">لوحة تحكم مطعم أنتيكا</h1>
+    </header>
+
+    <!-- Orders Section -->
+    <section class="section">
+      <h2 class="text-xl md:text-2xl font-semibold mb-4"><i class="fas fa-shopping-cart mr-2"></i>إدارة الطلبات</h2>
+      <select id="orderStatusFilter" class="p-2 mb-4 bg-white">
+        <option value="">جميع الطلبات</option>
+        <option value="جاري التحضير">جاري التحضير</option>
+        <option value="طلبك خرج للتوصيل">طلبك خرج للتوصيل</option>
+        <option value="اكتمل">اكتمل</option>
+      </select>
+      <div class="table-container">
+        <table id="ordersTable">
+          <thead>
+            <tr>
+              <th>رقم الطلب</th>
+              <th>التفاصيل</th>
+              <th>الحالة</th>
+              <th>تاريخ الإنشاء</th>
+              <th>رقم الواتساب</th>
+              <th>رابط واتساب</th>
+              <th>تحديث</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p id="orderMessage" class="mt-2"></p>
+    </section>
+
+    <!-- Menu Images Section -->
+    <section class="section">
+      <h2 class="text-xl md:text-2xl font-semibold mb-4"><i class="fas fa-image mr-2"></i>إدارة صور المنيو</h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <input type="file" id="menuImageInput" accept="image/*" class="p-2">
+        <button onclick="uploadMenuImage()" class="bg-blue-500 text-white hover:bg-blue-600"><i class="fas fa-upload mr-2"></i>رفع صورة</button>
+      </div>
+      <p id="menuMessage" class="mt-2"></p>
+      <div class="table-container">
+        <table id="menuTable">
+          <thead>
+            <tr>
+              <th>اسم الملف</th>
+              <th>إجراءات</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Offers Section -->
+    <section class="section">
+      <h2 class="text-xl md:text-2xl font-semibold mb-4"><i class="fas fa-gift mr-2"></i>إدارة العروض</h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <input id="offerId" type="text" placeholder="معرف العرض" class="p-2">
+        <input id="offerTitle" type="text" placeholder="عنوان العرض" class="p-2">
+        <textarea id="offerDescription" placeholder="وصف العرض" class="p-2" rows="4"></textarea>
+        <input id="offerPrice" type="text" placeholder="السعر" class="p-2">
+        <input id="offerExpiresAt" type="date" placeholder="تاريخ الانتهاء" class="p-2">
+        <button onclick="addOffer()" class="bg-green-500 text-white hover:bg-green-600"><i class="fas fa-plus mr-2"></i>إضافة عرض</button>
+      </div>
+      <p id="offerMessage" class="mt-2"></p>
+      <div class="table-container">
+        <table id="offersTable">
+          <thead>
+            <tr>
+              <th>معرف العرض</th>
+              <th>العنوان</th>
+              <th>الوصف</th>
+              <th>السعر</th>
+              <th>تاريخ الانتهاء</th>
+              <th>إجراءات</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    // Fetch and display orders
+    async function fetchOrders(status = '') {
+      const response = await fetch(`/api/orders${status ? `?status=${status}` : ''}`);
+      const data = await response.json();
+      const tbody = document.querySelector('#ordersTable tbody');
+      tbody.innerHTML = '';
+      data.orders.forEach(order => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${order.id}</td>
+          <td>${order.details.replace(/\n/g, '<br>')}</td>
+          <td>
+            <select onchange="updateOrderStatus('${order.id}', this.value)">
+              <option value="جاري التحضير" ${order.status === 'جاري التحضير' ? 'selected' : ''}>جاري التحضير</option>
+              <option value="طلبك خرج للتوصيل" ${order.status === 'طلبك خرج للتوصيل' ? 'selected' : ''}>طلبك خرج للتوصيل</option>
+              <option value="اكتمل" ${order.status === 'اكتمل' ? 'selected' : ''}>اكتمل</option>
+            </select>
+          </td>
+          <td>${new Date(order.createdAt).toLocaleString('ar-EG')}</td>
+          <td>${order.status !== 'اكتمل' ? order.whatsappNumber : '-'}</td>
+          <td>${order.whatsappLink ? `<a href="${order.whatsappLink}" target="_blank" class="text-blue-500 hover:underline">محادثة واتساب</a>` : '-'}</td>
+          <td><button onclick="updateOrderStatus('${order.id}', this.closest('tr').querySelector('select').value)" class="bg-blue-500 text-white p-1 rounded hover:bg-blue-600"><i class="fas fa-sync-alt"></i></button></td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    // Update order status
+    async function updateOrderStatus(orderId, status) {
+      const messageEl = document.getElementById('orderMessage');
+      if (!status) {
+        messageEl.innerText = 'يرجى اختيار حالة';
+        messageEl.className = 'error';
+        return;
+      }
+      const response = await fetch(`/api/orders/${orderId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status })
+      });
+      const result = await response.json();
+      messageEl.innerText = result.success ? 'تم تحديث الحالة بنجاح' : result.error;
+      messageEl.className = result.success ? 'success' : 'error';
+      setTimeout(() => { messageEl.innerText = ''; }, 3000);
+      fetchOrders(document.getElementById('orderStatusFilter').value);
+    }
+
+    // Fetch and display menu images
+    async function fetchMenuImages() {
+      const response = await fetch('/api/menu');
+      const data = await response.json();
+      const tbody = document.querySelector('#menuTable tbody');
+      tbody.innerHTML = '';
+      data.images.forEach(img => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${img.filename}</td>
+          <td><button onclick="deleteMenuImage('${img.filename}')" class="bg-red-500 text-white p-1 rounded hover:bg-red-600"><i class="fas fa-trash-alt"></i></button></td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    // Upload menu image
+    async function uploadMenuImage() {
+      const fileInput = document.getElementById('menuImageInput');
+      const messageEl = document.getElementById('menuMessage');
+      if (!fileInput.files[0]) {
+        messageEl.innerText = 'يرجى اختيار صورة';
+        messageEl.className = 'error';
+        return;
+      }
+      const formData = new FormData();
+      formData.append('image', fileInput.files[0]);
+      const response = await fetch('/api/menu', {
+        method: 'POST',
+        body: formData
+      });
+      const result = await response.json();
+      messageEl.innerText = result.success ? 'تم رفع الصورة بنجاح' : result.error;
+      messageEl.className = result.success ? 'success' : 'error';
+      setTimeout(() => { messageEl.innerText = ''; }, 3000);
+      fetchMenuImages();
+    }
+
+    // Delete menu image
+    async function deleteMenuImage(filename) {
+      const messageEl = document.getElementById('menuMessage');
+      const response = await fetch(`/api/menu/${filename}`, { method: 'DELETE' });
+      const result = await response.json();
+      messageEl.innerText = result.success ? 'تم حذف الصورة بنجاح' : result.error;
+      messageEl.className = result.success ? 'success' : 'error';
+      setTimeout(() => { messageEl.innerText = ''; }, 3000);
+      fetchMenuImages();
+    }
+
+    // Fetch and display offers
+    async function fetchOffers() {
+      const response = await fetch('/api/offers');
+      const data = await response.json();
+      const tbody = document.querySelector('#offersTable tbody');
+      tbody.innerHTML = '';
+      data.offers.forEach(offer => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${offer.id}</td>
+          <td>${offer.title}</td>
+          <td>${offer.description}</td>
+          <td>${offer.price}</td>
+          <td>${new Date(offer.expiresAt).toLocaleDateString('ar-EG')}</td>
+          <td>
+            <button onclick="editOffer('${offer.id}', '${offer.title}', '${offer.description}', '${offer.price}', '${offer.expiresAt}')" class="bg-yellow-500 text-white p-1 rounded hover:bg-yellow-600 mr-2"><i class="fas fa-edit"></i></button>
+            <button onclick="deleteOffer('${offer.id}')" class="bg-red-500 text-white p-1 rounded hover:bg-red-600"><i class="fas fa-trash-alt"></i></button>
+          </td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    // Add or update offer
+    async function addOffer() {
+      const id = document.getElementById('offerId').value;
+      const title = document.getElementById('offerTitle').value;
+      const description = document.getElementById('offerDescription').value;
+      const price = document.getElementById('offerPrice').value;
+      const expiresAt = document.getElementById('offerExpiresAt').value;
+      const messageEl = document.getElementById('offerMessage');
+      if (!id || !title || !description || !price || !expiresAt) {
+        messageEl.innerText = 'جميع الحقول مطلوبة';
+        messageEl.className = 'error';
+        return;
+      }
+      const offer = { id, title, description, price, expiresAt };
+      const method = document.getElementById('offerId').dataset.editing ? 'PUT' : 'POST';
+      const url = method === 'PUT' ? `/api/offers/${id}` : '/api/offers';
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(offer)
+      });
+      const result = await response.json();
+      messageEl.innerText = result.success ? 'تم إضافة/تحديث العرض بنجاح' : result.error;
+      messageEl.className = result.success ? 'success' : 'error';
+      setTimeout(() => { messageEl.innerText = ''; }, 3000);
+      resetOfferForm();
+      fetchOffers();
+    }
+
+    // Edit offer
+    function editOffer(id, title, description, price, expiresAt) {
+      document.getElementById('offerId').value = id;
+      document.getElementById('offerTitle').value = title;
+      document.getElementById('offerDescription').value = description;
+      document.getElementById('offerPrice').value = price;
+      document.getElementById('offerExpiresAt').value = new Date(expiresAt).toISOString().split('T')[0];
+      document.getElementById('offerId').dataset.editing = true;
+    }
+
+    // Delete offer
+    async function deleteOffer(id) {
+      const messageEl = document.getElementById('offerMessage');
+      const response = await fetch(`/api/offers/${id}`, { method: 'DELETE' });
+      const result = await response.json();
+      messageEl.innerText = result.success ? 'تم حذف العرض بنجاح' : result.error;
+      messageEl.className = result.success ? 'success' : 'error';
+      setTimeout(() => { messageEl.innerText = ''; }, 3000);
+      fetchOffers();
+    }
+
+    // Reset offer form
+    function resetOfferForm() {
+      document.getElementById('offerId').value = '';
+      document.getElementById('offerTitle').value = '';
+      document.getElementById('offerDescription').value = '';
+      document.getElementById('offerPrice').value = '';
+      document.getElementById('offerExpiresAt').value = '';
+      delete document.getElementById('offerId').dataset.editing;
+    }
+
+    // Event listeners
+    document.getElementById('orderStatusFilter').addEventListener('change', (e) => fetchOrders(e.target.value));
+    window.onload = () => {
+      fetchOrders();
+      fetchMenuImages();
+      fetchOffers();
+    };
+  </script>
+</body>
+</html>
