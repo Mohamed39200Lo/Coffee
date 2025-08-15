@@ -28,7 +28,7 @@ const pendingData = new Map(); // sender -> accumulating text chunks for order
 
 // For rate/timeout
 const lastMessageTimestamps = new Map();
-const INACTIVITY_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+const INACTIVITY_TIMEOUT = 30 * 60 * 1000; // 5 minutes
 const IGNORE_OLD_MESSAGES_THRESHOLD = 15 * 60 * 1000; // 15 minutes
 
 // ====== GitHub Gist options ======
