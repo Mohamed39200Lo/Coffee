@@ -24,7 +24,7 @@ const respondedMessages = new Map(); // sender -> state string
 const customerServiceSessions = new Map(); // sessionId -> { customerJid, expiresAt, timeout, type: 'general' }
 const pendingData = new Map(); // sender -> { area, details: [], name: '' }
 const lastMessageTimestamps = new Map();
-const INACTIVITY_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+const INACTIVITY_TIMEOUT = 50 * 60 * 1000; // 5 minutes
 const IGNORE_OLD_MESSAGES_THRESHOLD = 15 * 60 * 1000; // 15 minutes
 
 // ====== GitHub Gist options ======
@@ -222,7 +222,7 @@ async function sendWelcomeMenu(jid) {
 3️⃣ تتبع الطلب 🔍
 4️⃣ خدمة العملاء ☎️
 
-ℹ️ للعودة إلى القائمة الرئيسية في أي وقت أرسل: *إلغاء*`;
+🏛 للعودة إلى القائمة الرئيسية في أي وقت أرسل: *0*`;
   await sock.sendMessage(jid, { text });
   lastMessageTimestamps.set(jid, Date.now());
 }
@@ -230,7 +230,7 @@ async function sendWelcomeMenu(jid) {
 async function routeExistingUser(sender, text) {
   const state = respondedMessages.get(sender);
 
-  if (/^(إلغاء|ألغاء|الغاء|إلغاء)$/i.test(text)) {
+  if (text === "0") {
     if (state === "CUSTOMER_SERVICE") {
       const sessions = Array.from(customerServiceSessions.values()).filter(s => s.customerJid === sender);
       for (const session of sessions) {
@@ -255,7 +255,8 @@ async function routeExistingUser(sender, text) {
     if (text === "2") return handleShowMenu(sender);
     if (text === "3") return startTrackingFlow(sender);
     if (text === "4") return startCustomerService(sender, "general");
-    await sock.sendMessage(sender, { text: "⚠️ الرجاء اختيار رقم صحيح من القائمة." });  
+    await sock.sendMessage(sender, { text: "👋 مرحبًا بك! الرجاء اختيار رقم من القائمة علشان نقدر نخدمك بشكل أفضل ❤️." });
+    await sendWelcomeMenu(sender);
     return;
   }
 
@@ -339,7 +340,6 @@ async function finalizeOrder(jid) {
 الرجاء الانتظار قليلاً…` });
   respondedMessages.set(jid, "MAIN_MENU");
   pendingData.delete(jid);
-  await sendWelcomeMenu(jid);
 }
 
 async function handleShowMenu(jid) {
@@ -355,7 +355,6 @@ ${CATALOG_LINK}`;
     }
   });
   respondedMessages.set(jid, "MAIN_MENU");
-  await sendWelcomeMenu(jid);
 }
 
 async function startTrackingFlow(jid) {
@@ -374,7 +373,6 @@ async function handleTrackOrder(jid, orderId) {
     await sock.sendMessage(jid, { text: `🔔 تحديث حالة طلبك ${orderId}: ${statusText}` });
   }
   respondedMessages.set(jid, "MAIN_MENU");
-  await sendWelcomeMenu(jid);
 }
 
 async function startCustomerService(jid, type = "general", silent = false) {
@@ -399,7 +397,7 @@ async function startCustomerService(jid, type = "general", silent = false) {
   if (!silent) {
     const serviceText = type === "general" ? "خدمة العملاء ☎️" : "مشرف الفرع 👨‍🍳";
     await sock.sendMessage(jid, { 
-      text: `💬 شكراً لتواصلك مع ${serviceText} 🙏\nسوف نقوم بالرد عليك في أقرب وقت ممكن.\n\n🆔 معرف الجلسة: ${sessionId}\n\n🔙 لإنهاء المحادثة والعودة للقائمة الرئيسية أرسل كلمة: إلغاء` });
+      text: `💬 شكراً لتواصلك مع ${serviceText} 🙏\nسوف نقوم بالرد عليك في أقرب وقت ممكن.\n\n🆔 معرف الجلسة: ${sessionId}\n\n🔙 لإنهاء المحادثة والعودة للقائمة الرئيسية أرسل: *0*` });
   }
 }
 
