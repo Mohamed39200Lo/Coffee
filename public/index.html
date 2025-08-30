@@ -278,13 +278,13 @@
 
     // Delete order
     async function deleteOrder(orderId) {
-      if (confirm('اضغط تأكيد للحذف')) {
+      if (confirm('هل أنت متأكد من حذف هذا الطلب؟')) {
         const messageEl = document.getElementById('orderMessage');
         messageEl.innerText = 'جاري حذف الطلب...';
         messageEl.className = 'loading';
         try {
           const response = await fetch(`/api/orders/${orderId}`, {
-            method: 'DELETE'
+            method: 'DELETE',
           });
           const result = await response.json();
           messageEl.innerText = result.success ? 'تم حذف الطلب بنجاح' : result.error;
