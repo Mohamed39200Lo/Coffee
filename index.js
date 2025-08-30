@@ -116,7 +116,7 @@ const BRANCH = {
   ]
 };
 
-const CATALOG_LINK = "https://wa.me/c/201271021907";
+const CATALOG_LINK = "https://wa.me/c/966573760549";
 
 // ====== WhatsApp Connection ======
 let sock;
