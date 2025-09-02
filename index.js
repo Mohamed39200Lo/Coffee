@@ -144,7 +144,10 @@ const TEXTS = {
 1️⃣ العربية  
 2️⃣ ‏‏English`,
     invalidChoice: "👋 مرحبًا بك! الرجاء اختيار رقم من القائمة علشان نقدر نخدمك بشكل أفضل ❤️.",
-    deliveryArea: `📍 حدد موقع التوصيل باختيار أحد الأرقام: 🗺️`,
+    deliveryArea: `⏰ الطلب عادة يوصل خلال 20–30 دقيقة بأوقات الذروة، وأحيانًا أسرع 💨👌  
+الأهم نوّصله لك طازج ولذيذ 😋  
+
+للمتابعة في إكمال الطلب حدد موقع التوصيل باختيار أحد الأرقام: 🗺️`,
     invalidArea: "⚠️ الرجاء اختيار رقم منطقة صحيح.",
     orderPrompt: `🛒 عزيزي العميل، قم باختيار المنتجات المطلوبة من الكتالوج واضغط إرسال الطلب. 🍴
 
@@ -186,7 +189,10 @@ Please choose your preferred language:
 1️⃣ ‎Arabic  
 2️⃣ ‎English`,
     invalidChoice: "👋 Hello! Please select a number from the menu so we can serve you better ❤️.",
-    deliveryArea: `📍 Select delivery location: 🗺️`,
+    deliveryArea: `⏰ Orders usually arrive within 20–30 minutes during peak times, and sometimes even faster 💨👌  
+The most important thing is that we deliver it fresh and delicious 😋  
+
+To continue placing your order, please select your delivery area by choosing one of the numbers: 🗺️`,
     invalidArea: "⚠️ Please select a valid area number.",
     orderPrompt: `🛒 Dear customer, make sure to select the desired products from the catalog and press confirm order. 🍴
 
