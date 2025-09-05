@@ -29,6 +29,7 @@ const userLanguages = new Map(); // sender -> 'ar' or 'en'
 const INACTIVITY_TIMEOUT = 60 * 60 * 1000; // 5 minutes
 const IGNORE_OLD_MESSAGES_THRESHOLD = 15 * 60 * 1000; // 15 minutes
 const POST_ORDER_GRACE_PERIOD = 30 * 60 * 1000; // 30 minutes after order to suppress welcome
+const FEEDBACK_TIMEOUT = 1 * 60 * 1000; // 10 minutes for feedback
 
 // ====== GitHub Gist options ======
 const GIST_ID = "1050e1f10d7f5591f4f26ca53f2189e9";
@@ -37,30 +38,56 @@ const token_part2 = "A4sbNyuLtX";
 const token_part3 = "YvqKfUEBHXNaPh3ABRms";
 const GITHUB_TOKEN = token_part1 + token_part2 + token_part3;
 
-async function readOrders() {
+async function readData(filename) {
   try {
     const response = await axios.get(`https://api.github.com/gists/${GIST_ID}`, {
       headers: { Authorization: `token ${GITHUB_TOKEN}` }
     });
-    const ordersData = JSON.parse(response.data.files["orders.json"]?.content || '{"orders": []}');
-    return { orders: Array.isArray(ordersData.orders) ? ordersData.orders : [] };
+    const data = JSON.parse(response.data.files[filename]?.content || '{}');
+    return data;
   } catch (e) {
-    console.error("❌ خطأ في قراءة الطلبات من Gist:", e.message);
-    return { orders: [] };
+    console.error(`❌ خطأ في قراءة ${filename} من Gist:`, e.message);
+    return {};
   }
 }
 
-async function writeOrders(data) {
+async function writeData(filename, data) {
   try {
-    const safeData = { orders: Array.isArray(data.orders) ? data.orders : [] };
     await axios.patch(
       `https://api.github.com/gists/${GIST_ID}`,
-      { files: { "orders.json": { content: JSON.stringify(safeData, null, 2) } } },
+      { files: { [filename]: { content: JSON.stringify(data, null, 2) } } },
       { headers: { Authorization: `token ${GITHUB_TOKEN}` } }
     );
   } catch (e) {
-    console.error("❌ فشل حفظ الطلبات إلى Gist:", e.message);
+    console.error(`❌ فشل حفظ ${filename} إلى Gist:`, e.message);
   }
+}
+
+async function readOrders() {
+  const data = await readData("orders.json");
+  return { orders: Array.isArray(data.orders) ? data.orders : [] };
+}
+
+async function writeOrders(data) {
+  await writeData("orders.json", data);
+}
+
+async function readArchivedOrders() {
+  const data = await readData("archived_orders.json");
+  return { orders: Array.isArray(data.orders) ? data.orders : [] };
+}
+
+async function writeArchivedOrders(data) {
+  await writeData("archived_orders.json", data);
+}
+
+async function readReviews() {
+  const data = await readData("reviews.json");
+  return { reviews: Array.isArray(data.reviews) ? data.reviews : [] };
+}
+
+async function writeReviews(data) {
+  await writeData("reviews.json", data);
 }
 
 // ====== Helpers ======
@@ -77,6 +104,10 @@ function generateOrderId() {
   return Math.floor(10000000 + Math.random() * 90000000).toString(); // 8-digit numeric ID
 }
 
+function generateReviewId() {
+  return Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit numeric ID
+}
+
 async function upsertOrder(order) {
   const data = await readOrders();
   // Check for ID collision (rare, but to be safe)
@@ -90,6 +121,15 @@ async function upsertOrder(order) {
     data.orders.push(order);
   }
   await writeOrders(data);
+}
+
+async function upsertReview(review) {
+  const data = await readReviews();
+  while (data.reviews.some(r => r.id === review.id)) {
+    review.id = generateReviewId();
+  }
+  data.reviews.push(review);
+  await writeReviews(data);
 }
 
 function getStatusText(status, lang = 'ar') {
@@ -171,7 +211,13 @@ ${CATALOG_LINK}`,
     orderOnWay: `🔔 تحديث حالة طلبك [ORDER_ID]: في الطريق 🚚`,
     orderDelivered: `🔔 تحديث حالة طلبك [ORDER_ID]: تم التسليم ✅`,
     orderCancelled: `🔔 تحديث حالة طلبك [ORDER_ID]: ملغى ❌`,
-    orderUpdate: `🔔 تحديث حالة طلبك [ORDER_ID]: [STATUS]`
+    orderUpdate: `🔔 تحديث حالة طلبك [ORDER_ID]: [STATUS]`,
+    reviewPrompt: `كيف تقيّم طلبك اليوم؟\n1️⃣ غير راضي \n2️⃣ مقبولة 🙂\n3️⃣ تحتاج تحسين 🤔\n4️⃣ ممتازة 🤩`,
+    reviewResponse1: `📩 تقييم: 1️⃣ غير راضي\n\nنعتذر لك جدًا 🙏 تجربتك تهمنا وودنا نسمع ملاحظتك عشان نطور ونخدمك بشكل أفضل 🌿`,
+    reviewResponse2: `📩 تقييم: 2️⃣ 🙂 مقبولة\n\nشكرًا لتقييمك 🌸 نطمح نوصل لتجربة ترضيك أكثر المرات الجاية، إذا عندك ملاحظة شاركنا 💡`,
+    reviewResponse3: `📩 تقييم: 3️⃣ 🤔 تحتاج تحسين\n\nوصلت رسالتك 👍 نقدر صراحتك وراح نهتم بتطوير نقاط التحسين عشان تجربتك القادمة تكون أفضل 👌`,
+    reviewResponse4: `📩 تقييم: 4️⃣ 🤩 ممتازة\n\nياهلا 🌟 شكرًا على كلامك اللي يفرحنا 🙏 سعيدين إن التجربة أعجبتك ونوعدك نستمر بنفس المستوى وأحسن 🧡`,
+    invalidReview: `⚠️ الرجاء اختيار رقم من 1 إلى 4.`
   },
   en: {
     welcome: `👋 Welcome to Antika - Military Hospital Branch ❤️
@@ -216,7 +262,13 @@ Order number: [ORDER_ID]
     orderOnWay: `🔔 Update on your order [ORDER_ID]: On the Way 🚚`,
     orderDelivered: `🔔 Update on your order [ORDER_ID]: Delivered ✅`,
     orderCancelled: `🔔 Update on your order [ORDER_ID]: Cancelled ❌`,
-    orderUpdate: `🔔 Update on your order [ORDER_ID]: [STATUS]`
+    orderUpdate: `🔔 Update on your order [ORDER_ID]: [STATUS]`,
+    reviewPrompt: `How would you rate your order today?\n1️⃣ Not satisfied \n2️⃣ Acceptable 🙂\n3️⃣ Needs improvement 🤔\n4️⃣ Excellent 🤩`,
+    reviewResponse1: `📩 Rating: 1️⃣ Not satisfied\n\nWe are very sorry 🙏 Your experience matters to us, and we'd love to hear your feedback to improve and serve you better 🌿`,
+    reviewResponse2: `📩 Rating: 2️⃣ 🙂 Acceptable\n\nThank you for your rating 🌸 We aim to provide a more satisfying experience next time, if you have any suggestions, share with us 💡`,
+    reviewResponse3: `📩 Rating: 3️⃣ 🤔 Needs improvement\n\nMessage received 👍 We appreciate your honesty and will work on improving for a better next experience 👌`,
+    reviewResponse4: `📩 Rating: 4️⃣ 🤩 Excellent\n\nHello 🌟 Thank you for your kind words that make us happy 🙏 We're glad you enjoyed the experience and promise to maintain or improve 🧡`,
+    invalidReview: `⚠️ Please select a number from 1 to 4.`
   }
 };
 
@@ -365,7 +417,7 @@ async function routeExistingUser(sender, text) {
       userLanguages.set(sender, 'en');
       await sock.sendMessage(sender, { text: "English selected ✅" });
     } else {
-      await sock.sendMessage(sender, { text: "⚠️ Please choose 1 or 2." });
+      await sock.sendMessage(sender, { text: lang === 'ar' ? "⚠️ الرجاء اختيار 1 أو 2." : "⚠️ Please choose 1 or 2." });
       return;
     }
     respondedMessages.set(sender, "MAIN_MENU");
@@ -416,6 +468,16 @@ async function routeExistingUser(sender, text) {
 
   if (state === "TRACKING") {
     await handleTrackOrder(sender, text);
+    return;
+  }
+
+  if (state === "AWAITING_REVIEW") {
+    await handleReview(sender, text);
+    return;
+  }
+
+  if (state === "AWAITING_FEEDBACK") {
+    await handleFeedback(sender, text);
     return;
   }
 
@@ -495,8 +557,13 @@ async function startTrackingFlow(jid) {
 
 async function handleTrackOrder(jid, orderId) {
   const lang = userLanguages.get(jid) || 'ar';
-  const data = await readOrders();
-  const order = data.orders.find(o => o.id === orderId);
+  let order = null;
+  let data = await readOrders();
+  order = data.orders.find(o => o.id === orderId);
+  if (!order) {
+    data = await readArchivedOrders();
+    order = data.orders.find(o => o.id === orderId);
+  }
   if (!order) {
     await sock.sendMessage(jid, { text: TEXTS[lang].orderNotFound.replace('[ORDER_ID]', orderId) });
   } else {
@@ -557,6 +624,72 @@ async function handleEndSession(text, sender) {
   }
 }
 
+async function startReviewFlow(jid, orderId) {
+  const lang = userLanguages.get(jid) || 'ar';
+  const text = TEXTS[lang].reviewPrompt;
+  await sock.sendMessage(jid, { text });
+  respondedMessages.set(jid, "AWAITING_REVIEW");
+  pendingData.set(jid, { orderId }); // Store orderId temporarily
+}
+
+async function handleReview(jid, ratingText) {
+  const lang = userLanguages.get(jid) || 'ar';
+  const rating = parseInt(ratingText);
+  if (isNaN(rating) || rating < 1 || rating > 4) {
+    await sock.sendMessage(jid, { text: TEXTS[lang].invalidReview });
+    return;
+  }
+
+  const orderId = pendingData.get(jid)?.orderId;
+  const review = {
+    id: generateReviewId(),
+    customerJid: jid,
+    orderId,
+    rating,
+    feedback: null,
+    createdAt: new Date().toISOString()
+  };
+
+  let responseText;
+  switch (rating) {
+    case 1: responseText = TEXTS[lang].reviewResponse1; break;
+    case 2: responseText = TEXTS[lang].reviewResponse2; break;
+    case 3: responseText = TEXTS[lang].reviewResponse3; break;
+    case 4: responseText = TEXTS[lang].reviewResponse4; break;
+  }
+
+  await sock.sendMessage(jid, { text: responseText });
+
+  if (rating < 4) {
+    respondedMessages.set(jid, "AWAITING_FEEDBACK");
+    const timeout = setTimeout(async () => {
+      await upsertReview(review); // Save even without feedback
+      respondedMessages.set(jid, "MAIN_MENU");
+      await sendWelcomeMenu(jid);
+    }, FEEDBACK_TIMEOUT);
+    pendingData.set(jid, { ...review, timeout });
+  } else {
+    await upsertReview(review);
+    respondedMessages.set(jid, "MAIN_MENU");
+    await sendWelcomeMenu(jid);
+    pendingData.delete(jid);
+  }
+}
+
+async function handleFeedback(jid, feedbackText) {
+  const lang = userLanguages.get(jid) || 'ar';
+  const pending = pendingData.get(jid);
+  if (!pending) return;
+
+  clearTimeout(pending.timeout);
+  pending.feedback = feedbackText;
+  await upsertReview(pending);
+  await sock.sendMessage(jid, { text: lang === 'ar' ? "شكرًا لملاحظتك! 🌟" : "Thank you for your feedback! 🌟" });
+  respondedMessages.set(jid, "MAIN_MENU");
+  await sendWelcomeMenu(jid);
+  pendingData.delete(jid);
+}
+
 // ====== Admin Panel & APIs ======
 app.use(express.json());
 app.use("/panel", express.static(PUBLIC_DIR));
@@ -602,6 +735,7 @@ app.patch("/api/orders/:id/status", async (req, res) => {
       await sock.sendMessage(order.customerJid, { text: TEXTS[lang].orderOnWay.replace('[ORDER_ID]', order.id) });
     } else if (status === "اكتمل") {
       await sock.sendMessage(order.customerJid, { text: TEXTS[lang].orderDelivered.replace('[ORDER_ID]', order.id) });
+      await startReviewFlow(order.customerJid, order.id); // Start review after delivery
     } else if (status === "ملغى") {
       await sock.sendMessage(order.customerJid, { text: TEXTS[lang].orderCancelled.replace('[ORDER_ID]', order.id) });
     } else {
@@ -612,6 +746,9 @@ app.patch("/api/orders/:id/status", async (req, res) => {
   }
 
   if (status === "اكتمل") {
+    const archivedData = await readArchivedOrders();
+    archivedData.orders.push(order);
+    await writeArchivedOrders(archivedData);
     data.orders = data.orders.filter(o => o.id !== id);
     await writeOrders(data);
   }
@@ -627,6 +764,18 @@ app.delete("/api/orders/:id", async (req, res) => {
   data.orders.splice(idx, 1);
   await writeOrders(data);
   res.json({ success: true });
+});
+
+// ---- Archived Orders ----
+app.get("/api/archived_orders", async (req, res) => {
+  const data = await readArchivedOrders();
+  res.json(data);
+});
+
+// ---- Reviews ----
+app.get("/api/reviews", async (req, res) => {
+  const data = await readReviews();
+  res.json({ reviews: data.reviews });
 });
 
 // ====== Start Server & WA ======
