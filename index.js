@@ -581,7 +581,7 @@ async function startCustomerService(jid, type = "general", silent = false) {
   const timeout = setTimeout(async () => {
     customerServiceSessions.delete(sessionId);
     respondedMessages.set(jid, "MAIN_MENU");
-    await sendWelcomeMenu(jid);
+    
   }, twoHours);
 
   customerServiceSessions.set(sessionId, { 
