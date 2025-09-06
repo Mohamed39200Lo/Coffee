@@ -28,9 +28,9 @@ const lastOrderTimestamps = new Map(); // sender -> timestamp of last order
 const userLanguages = new Map(); // sender -> 'ar' or 'en'
 const INACTIVITY_TIMEOUT = 60 * 60 * 1000; // 5 minutes
 const IGNORE_OLD_MESSAGES_THRESHOLD = 15 * 60 * 1000; // 15 minutes
-const POST_ORDER_GRACE_PERIOD = 30 * 60 * 1000; // 30 minutes after order to suppress welcome
+const POST_ORDER_GRACE_PERIOD = 60 * 60 * 1000; // 30 minutes after order to suppress welcome
 const FEEDBACK_TIMEOUT = 1 * 60 * 1000; // 10 minutes for feedback
-
+const REVIEW_TIMEOUT = 1 * 1 * 60 * 1000; //
 // ====== GitHub Gist options ======
 const GIST_ID = "1050e1f10d7f5591f4f26ca53f2189e9";
 const token_part1 = "ghp_gFkAlF";
@@ -576,7 +576,7 @@ async function handleTrackOrder(jid, orderId) {
 async function startCustomerService(jid, type = "general", silent = false) {
   const lang = userLanguages.get(jid) || 'ar';
   const sessionId = generateSessionId();
-  const twoHours = 2 *60 * 60 * 1000;
+  const twoHours = 5 *1 * 60 * 1000;
 
   const timeout = setTimeout(async () => {
     customerServiceSessions.delete(sessionId);
@@ -632,6 +632,10 @@ async function startReviewFlow(jid, orderId) {
   pendingData.set(jid, { orderId }); // Store orderId temporarily
 }
 
+
+
+
+// ====== Modified handleReview Function ======
 async function handleReview(jid, ratingText) {
   const lang = userLanguages.get(jid) || 'ar';
   const rating = parseInt(ratingText);
@@ -660,21 +664,31 @@ async function handleReview(jid, ratingText) {
 
   await sock.sendMessage(jid, { text: responseText });
 
+  // Set timeout for review completion (2 hours)
+  const reviewTimeout = setTimeout(async () => {
+    await upsertReview(review); // Save review even if no feedback provided
+    respondedMessages.set(jid, "MAIN_MENU");
+    pendingData.delete(jid);
+    
+  }, REVIEW_TIMEOUT);
+
   if (rating < 4) {
     respondedMessages.set(jid, "AWAITING_FEEDBACK");
-    const timeout = setTimeout(async () => {
-      await upsertReview(review); // Save even without feedback
+    const feedbackTimeout = setTimeout(async () => {
+      await upsertReview(review); // Save review without feedback
       respondedMessages.set(jid, "MAIN_MENU");
-      await sendWelcomeMenu(jid);
+      pendingData.delete(jid);
+      
     }, FEEDBACK_TIMEOUT);
-    pendingData.set(jid, { ...review, timeout });
+    pendingData.set(jid, { ...review, timeout: feedbackTimeout });
   } else {
     await upsertReview(review);
     respondedMessages.set(jid, "MAIN_MENU");
-    await sendWelcomeMenu(jid);
     pendingData.delete(jid);
+    
   }
 }
+  
 
 async function handleFeedback(jid, feedbackText) {
   const lang = userLanguages.get(jid) || 'ar';
@@ -686,7 +700,7 @@ async function handleFeedback(jid, feedbackText) {
   await upsertReview(pending);
   await sock.sendMessage(jid, { text: lang === 'ar' ? "شكرًا لملاحظتك! 🌟" : "Thank you for your feedback! 🌟" });
   respondedMessages.set(jid, "MAIN_MENU");
-  await sendWelcomeMenu(jid);
+  
   pendingData.delete(jid);
 }
 
