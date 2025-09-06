@@ -29,8 +29,8 @@ const userLanguages = new Map(); // sender -> 'ar' or 'en'
 const INACTIVITY_TIMEOUT = 60 * 60 * 1000; // 5 minutes
 const IGNORE_OLD_MESSAGES_THRESHOLD = 15 * 60 * 1000; // 15 minutes
 const POST_ORDER_GRACE_PERIOD = 60 * 60 * 1000; // 30 minutes after order to suppress welcome
-const FEEDBACK_TIMEOUT = 1 * 60 * 1000; // 10 minutes for feedback
-const REVIEW_TIMEOUT = 1 * 1 * 60 * 1000; //
+const FEEDBACK_TIMEOUT = 10 * 60 * 1000; // 10 minutes for feedback
+const REVIEW_TIMEOUT = 1 * 60 * 60 * 1000; //
 // ====== GitHub Gist options ======
 const GIST_ID = "1050e1f10d7f5591f4f26ca53f2189e9";
 const token_part1 = "ghp_gFkAlF";
@@ -576,7 +576,7 @@ async function handleTrackOrder(jid, orderId) {
 async function startCustomerService(jid, type = "general", silent = false) {
   const lang = userLanguages.get(jid) || 'ar';
   const sessionId = generateSessionId();
-  const twoHours = 5 *1 * 60 * 1000;
+  const twoHours = 2 * 60 * 60 * 1000;
 
   const timeout = setTimeout(async () => {
     customerServiceSessions.delete(sessionId);
