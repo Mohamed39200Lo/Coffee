@@ -21,73 +21,43 @@ for (const dir of [DATA_DIR, PUBLIC_DIR]) {
 // ====== In-memory State ======
 global.qrCodeUrl = null;
 const respondedMessages = new Map(); // sender -> state string
-const customerServiceSessions = new Map(); // sessionId -> { customerJid, expiresAt, timeout, type: 'general' }
-const pendingData = new Map(); // sender -> { area, details: [], name: '' }
+const customerServiceSessions = new Map(); // sessionId -> { customerJid, expiresAt, timeout, type: 'general' | 'payment' }
+const pendingData = new Map(); // sender -> { type, details: string | {}, orderId: null, name: '' }
 const lastMessageTimestamps = new Map();
-const lastOrderTimestamps = new Map(); // sender -> timestamp of last order
-const userLanguages = new Map(); // sender -> 'ar' or 'en'
-const INACTIVITY_TIMEOUT = 60 * 60 * 1000; // 5 minutes
+const INACTIVITY_TIMEOUT = 5 * 60 * 1000; // 5 minutes
 const IGNORE_OLD_MESSAGES_THRESHOLD = 15 * 60 * 1000; // 15 minutes
-const POST_ORDER_GRACE_PERIOD = 60 * 60 * 1000; // 30 minutes after order to suppress welcome
-const FEEDBACK_TIMEOUT = 10 * 60 * 1000; // 10 minutes for feedback
-const REVIEW_TIMEOUT = 1 * 60 * 60 * 1000; //
+
 // ====== GitHub Gist options ======
-const GIST_ID = "1050e1f10d7f5591f4f26ca53f2189e9";
+const GIST_ID = "3eee22f7815901ef445444d0ff6a5e86";
 const token_part1 = "ghp_gFkAlF";
 const token_part2 = "A4sbNyuLtX";
 const token_part3 = "YvqKfUEBHXNaPh3ABRms";
 const GITHUB_TOKEN = token_part1 + token_part2 + token_part3;
 
-async function readData(filename) {
+async function readOrders() {
   try {
     const response = await axios.get(`https://api.github.com/gists/${GIST_ID}`, {
       headers: { Authorization: `token ${GITHUB_TOKEN}` }
     });
-    const data = JSON.parse(response.data.files[filename]?.content || '{}');
-    return data;
+    const ordersData = JSON.parse(response.data.files["orders.json"]?.content || '{"orders": []}');
+    return { orders: Array.isArray(ordersData.orders) ? ordersData.orders : [] };
   } catch (e) {
-    console.error(`❌ خطأ في قراءة ${filename} من Gist:`, e.message);
-    return {};
+    console.error("❌ خطأ في قراءة الطلبات من Gist:", e.message);
+    return { orders: [] };
   }
-}
-
-async function writeData(filename, data) {
-  try {
-    await axios.patch(
-      `https://api.github.com/gists/${GIST_ID}`,
-      { files: { [filename]: { content: JSON.stringify(data, null, 2) } } },
-      { headers: { Authorization: `token ${GITHUB_TOKEN}` } }
-    );
-  } catch (e) {
-    console.error(`❌ فشل حفظ ${filename} إلى Gist:`, e.message);
-  }
-}
-
-async function readOrders() {
-  const data = await readData("orders.json");
-  return { orders: Array.isArray(data.orders) ? data.orders : [] };
 }
 
 async function writeOrders(data) {
-  await writeData("orders.json", data);
-}
-
-async function readArchivedOrders() {
-  const data = await readData("archived_orders.json");
-  return { orders: Array.isArray(data.orders) ? data.orders : [] };
-}
-
-async function writeArchivedOrders(data) {
-  await writeData("archived_orders.json", data);
-}
-
-async function readReviews() {
-  const data = await readData("reviews.json");
-  return { reviews: Array.isArray(data.reviews) ? data.reviews : [] };
-}
-
-async function writeReviews(data) {
-  await writeData("reviews.json", data);
+  try {
+    const safeData = { orders: Array.isArray(data.orders) ? data.orders : [] };
+    await axios.patch(
+      `https://api.github.com/gists/${GIST_ID}`,
+      { files: { "orders.json": { content: JSON.stringify(safeData, null, 2) } } },
+      { headers: { Authorization: `token ${GITHUB_TOKEN}` } }
+    );
+  } catch (e) {
+    console.error("❌ فشل حفظ الطلبات إلى Gist:", e.message);
+  }
 }
 
 // ====== Helpers ======
@@ -104,10 +74,6 @@ function generateOrderId() {
   return Math.floor(10000000 + Math.random() * 90000000).toString(); // 8-digit numeric ID
 }
 
-function generateReviewId() {
-  return Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit numeric ID
-}
-
 async function upsertOrder(order) {
   const data = await readOrders();
   // Check for ID collision (rare, but to be safe)
@@ -121,156 +87,35 @@ async function upsertOrder(order) {
     data.orders.push(order);
   }
   await writeOrders(data);
+  return order.id;
 }
 
-async function upsertReview(review) {
-  const data = await readReviews();
-  while (data.reviews.some(r => r.id === review.id)) {
-    review.id = generateReviewId();
-  }
-  data.reviews.push(review);
-  await writeReviews(data);
-}
-
-function getStatusText(status, lang = 'ar') {
-  if (lang === 'en') {
-    switch (status) {
-      case "بانتظار التأكيد": return "Under Review ⏳";
-      case "جاري التحضير": return "Preparing 🍴";
-      case "في الطريق": return "On the Way 🚚";
-      case "اكتمل": return "Delivered ✅";
-      case "ملغى": return "Cancelled ❌";
-      default: return "Unknown ❓";
-    }
-  } else {
-    switch (status) {
-      case "بانتظار التأكيد": return "قيد المراجعة ⏳";
-      case "جاري التحضير": return "قيد التجهيز 🍴";
-      case "في الطريق": return "في الطريق 🚚";
-      case "اكتمل": return "تم التسليم ✅";
-      case "ملغى": return "ملغى ❌";
-      default: return "غير معروف ❓";
-    }
+function getStatusText(status) {
+  switch (status) {
+    case "pending_review":
+      return "قيد المراجعة ⏳";
+    case "awaiting_payment":
+      return "بانتظار الدفع 💳";
+    case "payment_review":
+      return "مراجعة الدفع 🔍";
+    case "confirmed":
+      return "مؤكد ✅";
+    case "preparing":
+      return "قيد التحضير 🍰";
+    case "ready":
+      return "جاهز للاستلام 🛍️";
+    case "delivered":
+      return "تم التسليم 🚚";
+    case "cancelled":
+      return "ملغى ❌";
+    default:
+      return "غير معروف ❓";
   }
 }
 
-// ====== Branch Configurations (Only Military) ======
-const BRANCH = {
-  name: "المستشفى العسكري",
-  areas: [
-    { id: 1, name_ar: "العيادات التخصصية 🏥", name_en: "Specialized Clinics 🏥" },
-    { id: 2, name_ar: "توسعة مستشفى الملك فهد 🏗️", name_en: "King Fahd Hospital Expansion 🏗️" },
-    { id: 3, name_ar: "مركز طب الأسنان 🦷", name_en: "Dental Center 🦷" }
-  ]
-};
-
-const CATALOG_LINK = "https://wa.me/c/966573760549";
-
-// ====== Language Texts ======
-const TEXTS = {
-  ar: {
-    welcome: `👋 مرحبًا بك في أنتيكا – فرع المستشفى العسكري ❤️
-اختر الخدمة المطلوبة:
-1️⃣ طلب جديد (توصيل) 🚚
-2️⃣ استعراض المنيو 📋
-3️⃣ تتبع الطلب 🔍
-4️⃣ خدمة العملاء ☎️
-5️⃣ تغيير اللغة 🔄
-
-🏛 للعودة إلى القائمة الرئيسية في أي وقت أرسل: *0*`,
-    languagePrompt: `✨ مرحباً بك!  
-فضلاً اختر لغتك المفضلة:  
-
-1️⃣ العربية  
-2️⃣ ‏‏English`,
-    invalidChoice: "👋 مرحبًا بك! الرجاء اختيار رقم من القائمة علشان نقدر نخدمك بشكل أفضل ❤️.",
-    deliveryArea: `⏰ الطلب عادة يوصل خلال 20–30 دقيقة بأوقات الذروة، وأحيانًا أسرع 💨👌  
-الأهم نوّصله لك طازج ولذيذ 😋  
-
-للمتابعة في إكمال الطلب حدد موقع التوصيل باختيار أحد الأرقام: 🗺️`,
-    invalidArea: "⚠️ الرجاء اختيار رقم منطقة صحيح.",
-    orderPrompt: `🛒 عزيزي العميل، قم باختيار المنتجات المطلوبة من الكتالوج واضغط إرسال الطلب. 🍴
-
-⏩️ ${CATALOG_LINK}`,
-    namePrompt: "الرجاء ارسال اسمك لتأكيد الطلب",
-    orderConfirmation: `⏳ شكرًا لك، طلبك تحت المراجعة حاليًا من مشرف الفرع. 🙏
-الرجاء الانتظار قليلاً…`,
-    menuLink: `📖 تفضل هذا هو المنيو الخاص بنا: 🍰
-${CATALOG_LINK}`,
-    trackingPrompt: `🔍 الرجاء إدخال رقم الطلب الخاص بك لمتابعة حالته. 📦`,
-    orderNotFound: `⚠️ لا يوجد طلب بهذا الرقم: [ORDER_ID] ❗`,
-    orderStatus: `🔔 تحديث حالة طلبك [ORDER_ID]: [STATUS]`,
-    supportStart: `💬 شكراً لتواصلك مع [SERVICE_TEXT] 🙏\nسوف نقوم بالرد عليك في أقرب وقت ممكن.\n\n🆔 معرف الجلسة: [SESSION_ID]\n\n🔙 لإنهاء المحادثة والعودة للقائمة الرئيسية أرسل: *0*`,
-    endSessionInvalid: "⚠️ يرجى تحديد معرف الجلسة بعد كلمة 'انتهاء' (مثال: انتهاء 1234) ❗",
-    endSessionNotFound: `⚠️ لا توجد جلسة بالمعرف [SESSION_ID]. ❗`,
-    endSessionSuccess: "✅ تم إنهاء الجلسة. كيف نقدر نخدمك اليوم؟ 👋",
-    endSessionAdmin: `✅ تم إنهاء الجلسة ([SESSION_ID]).`,
-    orderAccepted: `✅ تم قبول طلبك بنجاح. 🙌
-رقم الطلب: [ORDER_ID]
-📦 طلبك الآن قيد التجهيز، وسيتم التواصل معك عند الانتهاء. 🍴`,
-    orderOnWay: `🔔 تحديث حالة طلبك [ORDER_ID]: في الطريق 🚚`,
-    orderDelivered: `🔔 تحديث حالة طلبك [ORDER_ID]: تم التسليم ✅`,
-    orderCancelled: `🔔 تحديث حالة طلبك [ORDER_ID]: ملغى ❌`,
-    orderUpdate: `🔔 تحديث حالة طلبك [ORDER_ID]: [STATUS]`,
-    reviewPrompt: `كيف تقيّم طلبك اليوم؟\n1️⃣ غير راضي \n2️⃣ مقبولة 🙂\n3️⃣ تحتاج تحسين 🤔\n4️⃣ ممتازة 🤩`,
-    reviewResponse1: `📩 تقييم: 1️⃣ غير راضي\n\nنعتذر لك جدًا 🙏 تجربتك تهمنا وودنا نسمع ملاحظتك عشان نطور ونخدمك بشكل أفضل 🌿`,
-    reviewResponse2: `📩 تقييم: 2️⃣ 🙂 مقبولة\n\nشكرًا لتقييمك 🌸 نطمح نوصل لتجربة ترضيك أكثر المرات الجاية، إذا عندك ملاحظة شاركنا 💡`,
-    reviewResponse3: `📩 تقييم: 3️⃣ 🤔 تحتاج تحسين\n\nوصلت رسالتك 👍 نقدر صراحتك وراح نهتم بتطوير نقاط التحسين عشان تجربتك القادمة تكون أفضل 👌`,
-    reviewResponse4: `📩 تقييم: 4️⃣ 🤩 ممتازة\n\nياهلا 🌟 شكرًا على كلامك اللي يفرحنا 🙏 سعيدين إن التجربة أعجبتك ونوعدك نستمر بنفس المستوى وأحسن 🧡`,
-    invalidReview: `⚠️ الرجاء اختيار رقم من 1 إلى 4.`
-  },
-  en: {
-    welcome: `👋 Welcome to Antika - Military Hospital Branch ❤️
-Choose the desired service:
-1️⃣ New Order (Delivery) 🚚
-2️⃣ View Menu 📋
-3️⃣ Track Order 🔍
-4️⃣ Customer Service ☎️
-5️⃣ Change Language 🔄
-
-🏛 To return to the main menu at any time, send: *0*`,
-    languagePrompt: `✨ Welcome to Antika Restaurant ❤️
-Please choose your preferred language:  
-
-1️⃣ ‎Arabic  
-2️⃣ ‎English`,
-    invalidChoice: "👋 Hello! Please select a number from the menu so we can serve you better ❤️.",
-    deliveryArea: `⏰ Orders usually arrive within 20–30 minutes during peak times, and sometimes even faster 💨👌  
-The most important thing is that we deliver it fresh and delicious 😋  
-
-To continue placing your order, please select your delivery area by choosing one of the numbers: 🗺️`,
-    invalidArea: "⚠️ Please select a valid area number.",
-    orderPrompt: `🛒 Dear customer, make sure to select the desired products from the catalog and press confirm order. 🍴
-
-⏩️ ${CATALOG_LINK}`,
-    namePrompt: "Please send your name to confirm the order",
-    orderConfirmation: `⏳ Thank you, your order is currently under review by the branch supervisor. 🙏
-Please wait a moment…`,
-    menuLink: `📖 Here is our menu: 🍰
-${CATALOG_LINK}`,
-    trackingPrompt: `🔍 Please enter your order number to track its status. 📦`,
-    orderNotFound: `⚠️ No order found with this number: [ORDER_ID] ❗`,
-    orderStatus: `🔔 Update on your order [ORDER_ID]: [STATUS]`,
-    supportStart: `💬 Thank you for contacting [SERVICE_TEXT] 🙏\nWe will respond to you as soon as possible.\n\n🆔 Session ID: [SESSION_ID]\n\n🔙 To end the conversation and return to the main menu, send: *0*`,
-    endSessionInvalid: "⚠️ Please specify the session ID after 'انتهاء' (example: انتهاء 1234) ❗",
-    endSessionNotFound: `⚠️ No session found with ID [SESSION_ID]. ❗`,
-    endSessionSuccess: "✅ Session ended. How can we help you today? 👋",
-    endSessionAdmin: `✅ Session ended ([SESSION_ID]).`,
-    orderAccepted: `✅ Your order has been accepted successfully. 🙌
-Order number: [ORDER_ID]
-📦 Your order is now being prepared, and we will contact you when it's ready. 🍴`,
-    orderOnWay: `🔔 Update on your order [ORDER_ID]: On the Way 🚚`,
-    orderDelivered: `🔔 Update on your order [ORDER_ID]: Delivered ✅`,
-    orderCancelled: `🔔 Update on your order [ORDER_ID]: Cancelled ❌`,
-    orderUpdate: `🔔 Update on your order [ORDER_ID]: [STATUS]`,
-    reviewPrompt: `How would you rate your order today?\n1️⃣ Not satisfied \n2️⃣ Acceptable 🙂\n3️⃣ Needs improvement 🤔\n4️⃣ Excellent 🤩`,
-    reviewResponse1: `📩 Rating: 1️⃣ Not satisfied\n\nWe are very sorry 🙏 Your experience matters to us, and we'd love to hear your feedback to improve and serve you better 🌿`,
-    reviewResponse2: `📩 Rating: 2️⃣ 🙂 Acceptable\n\nThank you for your rating 🌸 We aim to provide a more satisfying experience next time, if you have any suggestions, share with us 💡`,
-    reviewResponse3: `📩 Rating: 3️⃣ 🤔 Needs improvement\n\nMessage received 👍 We appreciate your honesty and will work on improving for a better next experience 👌`,
-    reviewResponse4: `📩 Rating: 4️⃣ 🤩 Excellent\n\nHello 🌟 Thank you for your kind words that make us happy 🙏 We're glad you enjoyed the experience and promise to maintain or improve 🧡`,
-    invalidReview: `⚠️ Please select a number from 1 to 4.`
-  }
-};
+// ====== Catalog Links ======
+const CELEBRATION_CAKES_CATALOG = "https://wa.me/c/201271021907"; // Example, replace with actual
+const GENERAL_CATALOG = "https://wa.me/c/201271021907";
 
 // ====== WhatsApp Connection ======
 let sock;
@@ -316,7 +161,13 @@ async function handleMessagesUpsert({ messages }) {
   if (messageTimestamp < Date.now() - IGNORE_OLD_MESSAGES_THRESHOLD) return;
 
   let messageContent = '';
-  if (msg.message.conversation) {
+  let isImage = false;
+  let imageUrl = null;
+
+  if (msg.message.imageMessage) {
+    isImage = true;
+    imageUrl = "simulated_image_url_from_message"; // Placeholder: Implement actual download and upload if needed for persistence
+  } else if (msg.message.conversation) {
     messageContent = msg.message.conversation;
   } else if (msg.message.extendedTextMessage) {
     messageContent = msg.message.extendedTextMessage.text;
@@ -335,58 +186,88 @@ async function handleMessagesUpsert({ messages }) {
     messageContent += `الإجمالي: ${order.totalAmount1000 / 1000} ${order.totalCurrencyCode}`;
   }
 
-  let text = convertArabicToEnglishNumbers(messageContent.trim());
+  const text = convertArabicToEnglishNumbers(messageContent.trim());
   const isFromMe = msg.key.fromMe;
 
-  // Support emoji numbers in text (e.g., "1️⃣" -> "1")
-  text = text.replace(/([1-5])️⃣/g, '$1');
-
   try {
+    if (isFromMe) return;
+
+    const state = respondedMessages.get(sender);
+
     if (text.startsWith("انتهاء ")) {
       await handleEndSession(text, sender);
       return;
     }
 
-    if (text === "📌") {
-      const silent = isFromMe;
-      await startCustomerService(sender, "general", silent);
+    if (text === "7") {
+      await startCustomerService(sender, "general");
       return;
     }
 
-    if (isFromMe) return;
+    if (text === "0") {
+      if (state === "AWAITING_PAYMENT_PROOF" || state === "CONFIRM_PAYMENT") {
+        await cancelOrder(sender);
+        return;
+      } else if (state !== "SUBMITTED" && state !== "CUSTOMER_SERVICE") {
+        respondedMessages.set(sender, "MAIN_MENU");
+        pendingData.delete(sender);
+        await sendWelcomeMenu(sender);
+        return;
+      }
+    }
 
-    if (!respondedMessages.has(sender)) {  
-      await sendLanguagePrompt(sender);  
-      respondedMessages.set(sender, "LANGUAGE_SELECTION");  
-      lastMessageTimestamps.set(sender, Date.now());  
-      return;  
-    }  
+    if (state === "SUBMITTED") return; // Stop interacting after order submission unless 0 or 7
 
-    await routeExistingUser(sender, text);
+    if (state === "AWAITING_PAYMENT_PROOF" && isImage) {
+      await handlePaymentProof(sender, imageUrl);
+      return;
+    }
+
+    if (!respondedMessages.has(sender)) {
+      await sendWelcomeMenu(sender);
+      respondedMessages.set(sender, "MAIN_MENU");
+      lastMessageTimestamps.set(sender, Date.now());
+      return;
+    }
+
+    await routeExistingUser(sender, text, isImage);
   } catch (e) {
     console.error("❌ خطأ في معالجة الرسالة:", e);
   } finally {
-    lastMessageTimestamps.set(sender, Date.now());
+    if (!isImage) lastMessageTimestamps.set(sender, Date.now());
   }
 }
 
 // ====== Bot Flows ======
-async function sendLanguagePrompt(jid) {
-  const text = TEXTS.ar.languagePrompt; // Using AR version as it's bilingual
-  await sock.sendMessage(jid, { text });
-  lastMessageTimestamps.set(jid, Date.now());
-}
-
 async function sendWelcomeMenu(jid) {
-  const lang = userLanguages.get(jid) || 'ar';
-  const text = TEXTS[lang].welcome;
+  const text = `✨ بوت مخبز ومقهى لوميرا ✨
+
+مرحبًا 👋
+معاكم مخبز ومقهى لوميرا لخدمتكم بأطيب النكهات وأجمل الكيكات 🎂☕
+لخدمة أسرع اختر من القائمة التالية:
+
+1️⃣ 🕒 أوقات عمل المقهى
+2️⃣ 🎂 الطلبيات الخاصة لمناسباتكم
+3️⃣ 🍰 منيو كيكات الاحتفالات 🎉
+4️⃣ 📖 طلب من الكتالوج
+5️⃣ 🔄 سياسة الإلغاء والاستبدال
+6️⃣ 💳 إرسال إيصال الدفع
+7️⃣ 💬 التحدث مع خدمة العملاء
+
+🏛 للعودة إلى القائمة الرئيسية في أي وقت أرسل: *0*`;
   await sock.sendMessage(jid, { text });
   lastMessageTimestamps.set(jid, Date.now());
 }
 
-async function routeExistingUser(sender, text) {
+async function routeExistingUser(sender, text, isImage) {
   const state = respondedMessages.get(sender);
-  const lang = userLanguages.get(sender) || 'ar';
+
+  const lastTime = lastMessageTimestamps.get(sender) || 0;
+  if (Date.now() - lastTime > INACTIVITY_TIMEOUT && state !== "CUSTOMER_SERVICE" && state !== "AWAITING_PAYMENT_PROOF") {
+    await sendWelcomeMenu(sender);
+    lastMessageTimestamps.set(sender, Date.now());
+    return;
+  }
 
   if (text === "0") {
     if (state === "CUSTOMER_SERVICE") {
@@ -401,60 +282,35 @@ async function routeExistingUser(sender, text) {
     return sendWelcomeMenu(sender);
   }
 
-  const lastTime = lastMessageTimestamps.get(sender) || 0;
-  const lastOrderTime = lastOrderTimestamps.get(sender) || 0;
-  if (Date.now() - lastTime > INACTIVITY_TIMEOUT && state !== "CUSTOMER_SERVICE" && Date.now() - lastOrderTime > POST_ORDER_GRACE_PERIOD) {
-    await sendWelcomeMenu(sender);
-    lastMessageTimestamps.set(sender, Date.now());
-    return;
-  }
-
-  if (state === "LANGUAGE_SELECTION") {
-    if (text === "1") {
-      userLanguages.set(sender, 'ar');
-      await sock.sendMessage(sender, { text: "تم اختيار العربية ✅" });
-    } else if (text === "2") {
-      userLanguages.set(sender, 'en');
-      await sock.sendMessage(sender, { text: "English selected ✅" });
-    } else {
-      await sock.sendMessage(sender, { text: lang === 'ar' ? "⚠️ الرجاء اختيار 1 أو 2." : "⚠️ Please choose 1 or 2." });
-      return;
-    }
-    respondedMessages.set(sender, "MAIN_MENU");
-    await sendWelcomeMenu(sender);
-    return;
-  }
-
   if (state === "MAIN_MENU") {
-    if (text === "1") return startDeliveryFlow(sender);
-    if (text === "2") return handleShowMenu(sender);
-    if (text === "3") return startTrackingFlow(sender);
-    if (text === "4") return startCustomerService(sender, "general");
-    if (text === "5") {
-      respondedMessages.set(sender, "LANGUAGE_SELECTION");
-      return sendLanguagePrompt(sender);
-    }
-    await sock.sendMessage(sender, { text: TEXTS[lang].invalidChoice });
+    if (text === "1") return handleWorkingHours(sender);
+    if (text === "2") return startSpecialOrderFlow(sender);
+    if (text === "3") return handleCelebrationCakesMenu(sender);
+    if (text === "4") return handleGeneralCatalogOrder(sender);
+    if (text === "5") return handleCancellationPolicy(sender);
+    if (text === "6") return handleSendPaymentProof(sender);
+    if (text === "7") return startCustomerService(sender, "general");
+    await sock.sendMessage(sender, { text: "👋 مرحبًا بك! الرجاء اختيار رقم من القائمة علشان نقدر نخدمك بشكل أفضل ❤️." });
     await sendWelcomeMenu(sender);
     return;
   }
 
-  if (state === "DELIVERY_AREA") {
-    const areas = BRANCH.areas;
-    const selectedArea = areas.find(a => a.id.toString() === text);
-    if (!selectedArea) {
-      await sock.sendMessage(sender, { text: TEXTS[lang].invalidArea });
-      return;
-    }
-    const areaName = lang === 'ar' ? selectedArea.name_ar : selectedArea.name_en;
-    await handleAreaSelected(sender, areaName);
+  if (state === "SPECIAL_ORDER") {
+    await handleSpecialOrderDetails(sender, text);
     return;
   }
 
-  if (state === "AWAITING_ORDER") {
+  if (state === "AWAITING_CONFIRMATION") {
+    if (text === "1") return confirmSpecialOrder(sender);
+    if (text === "2") return addMoreDetails(sender);
+    await sock.sendMessage(sender, { text: "⚠️ الرجاء اختيار 1 أو 2." });
+    return;
+  }
+
+  if (state === "AWAITING_ORDER_DETAILS" || state === "AWAITING_CATALOG_ORDER") {
     if (text.startsWith("طلب من الكتالوج:")) {
       pendingData.set(sender, { ...pendingData.get(sender), details: text });
-      await sock.sendMessage(sender, { text: TEXTS[lang].namePrompt });
+      await sock.sendMessage(sender, { text: "الرجاء إرسال اسمك لتأكيد الطلب 👤" });
       respondedMessages.set(sender, "AWAITING_NAME");
       return;
     }
@@ -462,126 +318,272 @@ async function routeExistingUser(sender, text) {
 
   if (state === "AWAITING_NAME") {
     pendingData.set(sender, { ...pendingData.get(sender), name: text });
-    await finalizeOrder(sender);
+    await submitOrderForReview(sender);
     return;
   }
 
-  if (state === "TRACKING") {
-    await handleTrackOrder(sender, text);
-    return;
-  }
-
-  if (state === "AWAITING_REVIEW") {
-    await handleReview(sender, text);
-    return;
-  }
-
-  if (state === "AWAITING_FEEDBACK") {
-    await handleFeedback(sender, text);
+  if (state === "CONFIRM_PAYMENT") {
+    if (text === "1") return confirmPaymentProof(sender);
+    if (text === "2") return rejectPaymentProof(sender);
+    if (text === "3") return cancelOrder(sender);
+    if (text === "4") return startCustomerService(sender, "payment");
+    await sock.sendMessage(sender, { text: "⚠️ الرجاء اختيار من 1 إلى 4." });
     return;
   }
 
   if (state === "CUSTOMER_SERVICE") {
-    // Allow messages in customer service without interruption
+    // Allow free messaging in customer service
     return;
+  }
+
+  if (state === "AWAITING_PAYMENT_PROOF") {
+    if (!isImage) {
+      if (text === "0") {
+        await cancelOrder(sender);
+        return;
+      }
+      if (text === "7") {
+        await startCustomerService(sender, "general");
+        return;
+      }
+      await sock.sendMessage(sender, { text: "⚠️ نحن بانتظار صورة إيصال الدفع. إذا أردت إلغاء الطلب أرسل 0. والتواصل مع خدمة العملاء أرسل 7" });
+      return;
+    }
   }
 }
 
-async function startDeliveryFlow(jid) {
-  const lang = userLanguages.get(jid) || 'ar';
-  const areasText = BRANCH.areas.map(a => `${a.id}. ${lang === 'ar' ? a.name_ar : a.name_en}`).join("\n\t");
-  const text = `${TEXTS[lang].deliveryArea}\n\t${areasText}`;
+// ====== Specific Flows ======
+async function handleWorkingHours(jid) {
+  const text = `🕒 أوقات العمل
+
+الفرع:
+• السبت – الخميس: 2:00 ظهرًا – 12:00 منتصف الليل
+• الجمعة: 4:00 عصرًا – 12:00 منتصف الليل
+
+واتساب: من 1:00 ظهرًا – 9:00 مساءً`;
   await sock.sendMessage(jid, { text });
-  respondedMessages.set(jid, "DELIVERY_AREA");
+  respondedMessages.set(jid, "MAIN_MENU");
 }
 
-async function handleAreaSelected(jid, areaName) {
-  const lang = userLanguages.get(jid) || 'ar';
-  const text = TEXTS[lang].orderPrompt;
-  await sock.sendMessage(jid, { 
-    text,
-    linkPreview: {
-      title: lang === 'ar' ? 'كتالوج المطعم 📋' : 'Restaurant Catalog 📋',
-      body: lang === 'ar' ? 'تصفح الأصناف والعروض 🎉' : 'Browse items and offers 🎉',
-      canonicalUrl: CATALOG_LINK,
-      matchedText: CATALOG_LINK
-    }
-  });
-  respondedMessages.set(jid, "AWAITING_ORDER");
-  pendingData.set(jid, { area: areaName, details: "", name: "" });
+async function handleCancellationPolicy(jid) {
+  const text = `🔄 سياسة الإلغاء والاستبدال 
+
+✅ إلغاء الطلب مع استرداد المبلغ كاملًا
+يمكن إلغاء الطلب قبل 5 أيام أو أكثر من موعد الاستلام، وسيتم إعادة المبلغ المدفوع.
+
+⚠️ إلغاء قبل الموعد بـ 3 – 4 أيام
+في هذه الحالة لا يتم استرداد المبلغ، ولكن يمكنكم تغيير الموعد واختيار مناسبة أخرى.
+
+✏️ الاستبدال أو تعديل تفاصيل الحجز
+يمكن تعديل التفاصيل أو استبدال الطلب قبل الموعد بـ 3 أيام كحد أقصى.
+
+📞 للإلغاء أو تغيير تفاصيل الحجز
+يرجى التواصل مع خدمة العملاء عبر إرسال الرقم: 7`;
+  await sock.sendMessage(jid, { text });
+  respondedMessages.set(jid, "MAIN_MENU");
 }
 
-async function finalizeOrder(jid) {
-  const lang = userLanguages.get(jid) || 'ar';
-  const data = pendingData.get(jid) || { area: null, details: "", name: "" };
+async function startSpecialOrderFlow(jid) {
+  const text = `🎂 الطلبيات الخاصة
+
+⚠️ تنويه مهم:
+استلام الكيك من الفرع: 2:00 – 3:00 عصرًا.
+الكيكات من 3 أدوار فأكثر يتم توصيلها بين 2:30 – 3:00 عصرًا.
+
+🔹 يرجى إرسال جميع البيانات في رسالة واحدة:
+• تاريخ الاستلام (ميلادي) 📅
+• حجم الكيك 🎂
+• الحشوة 🥥🍫
+• الكتابة ✍️
+• اسم المستلم 👤
+
+لإلغاء الطلب والعودة للقائمة الرئيسية أرسل الرقم 0`;
+  await sock.sendMessage(jid, { text });
+  respondedMessages.set(jid, "SPECIAL_ORDER");
+  pendingData.set(jid, { type: "special", details: "" });
+}
+
+async function handleSpecialOrderDetails(jid, detailsText) {
+  let currentDetails = pendingData.get(jid).details || "";
+  let newDetails = currentDetails ? currentDetails + "\n" + detailsText : detailsText;
+  pendingData.set(jid, { ...pendingData.get(jid), details: newDetails });
+
+  const text = `هل البيانات كاملة؟
+${newDetails}
+
+1️⃣ نعم، أكد الطلب ✅
+2️⃣ أود إضافة مزيد من التفاصيل ✏️
+لإلغاء الطلب والعودة للقائمة الرئيسية أرسل الرقم 0`;
+  await sock.sendMessage(jid, { text });
+  respondedMessages.set(jid, "AWAITING_CONFIRMATION");
+}
+
+async function addMoreDetails(jid) {
+  await sock.sendMessage(jid, { text: "✏️ يرجى إرسال التفاصيل الإضافية أو تصحيح البيانات في رسالة واحدة." });
+  respondedMessages.set(jid, "SPECIAL_ORDER");
+}
+
+async function confirmSpecialOrder(jid) {
+  const data = pendingData.get(jid);
   const id = generateOrderId();
   const order = {
     id,
     customerJid: jid,
-    area: data.area,
-    details: data.details, // هنا يتم حفظ التفاصيل الكاملة للعناصر
-    name: data.name,
-    status: "بانتظار التأكيد",
+    type: data.type,
+    details: data.details, // string as is
+    status: "pending_review",
     createdAt: new Date().toISOString()
   };
   await upsertOrder(order);
 
-  await sock.sendMessage(jid, { text: TEXTS[lang].orderConfirmation });
-  lastOrderTimestamps.set(jid, Date.now()); // Set grace period start
-  await startCustomerService(jid, "general", true); // Auto-start support silently
-  respondedMessages.set(jid, "CUSTOMER_SERVICE"); // Set to customer service
+  await sock.sendMessage(jid, { text: `✅ تم تسجيل طلبك الخاص بنجاح. رقم الطلب: ${id}\nسيتم مراجعته قريبًا. 🙏` });
+  respondedMessages.set(jid, "SUBMITTED"); // Stop further interaction
   pendingData.delete(jid);
 }
 
-async function handleShowMenu(jid) {
-  const lang = userLanguages.get(jid) || 'ar';
-  const text = TEXTS[lang].menuLink;
+async function handleCelebrationCakesMenu(jid) {
+  const text = `📖 منيو كيكات الاحتفالات 🍰
+يمكنك اختيار الطلبات، ثم الضغط على "إرسال الطلب".
+
+⏩️ ${CELEBRATION_CAKES_CATALOG}`;
   await sock.sendMessage(jid, { 
     text,
     linkPreview: {
-      title: lang === 'ar' ? 'كتالوج المطعم 📋' : 'Restaurant Catalog 📋',
-      body: lang === 'ar' ? 'تصفح الأصناف والعروض 🎉' : 'Browse items and offers 🎉',
-      canonicalUrl: CATALOG_LINK,
-      matchedText: CATALOG_LINK
+      title: 'منيو كيكات الاحتفالات 🎉',
+      body: 'تصفح أجمل الكيكات لمناسباتك',
+      canonicalUrl: CELEBRATION_CAKES_CATALOG,
+      matchedText: CELEBRATION_CAKES_CATALOG
     }
   });
-  respondedMessages.set(jid, "MAIN_MENU");
+  respondedMessages.set(jid, "AWAITING_ORDER_DETAILS");
+  pendingData.set(jid, { type: "celebration_cakes", details: "" });
 }
 
-async function startTrackingFlow(jid) {
-  const lang = userLanguages.get(jid) || 'ar';
-  const text = TEXTS[lang].trackingPrompt;
+async function handleGeneralCatalogOrder(jid) {
+  const text = `📦 طلب من الكتالوج
+يمكنك اختيار الطلبات، ثم الضغط على "إرسال الطلب".
+
+⏩️ ${GENERAL_CATALOG}`;
+  await sock.sendMessage(jid, { 
+    text,
+    linkPreview: {
+      title: 'كتالوج المخبز والمقهى 📖',
+      body: 'أطيب المخبوزات والمشروبات ☕',
+      canonicalUrl: GENERAL_CATALOG,
+      matchedText: GENERAL_CATALOG
+    }
+  });
+  respondedMessages.set(jid, "AWAITING_CATALOG_ORDER");
+  pendingData.set(jid, { type: "general_catalog", details: "" });
+}
+
+async function handleSendPaymentProof(jid) {
+  const data = await readOrders();
+  const customerOrders = data.orders.filter(o => o.customerJid === jid && o.status === "awaiting_payment");
+  if (customerOrders.length === 0) {
+    await sock.sendMessage(jid, { text: "⚠️ لا يوجد طلب بانتظار الدفع حاليًا." });
+    return;
+  }
+  // Get the latest order
+  customerOrders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const latestOrder = customerOrders[0];
+
+  pendingData.set(jid, { orderId: latestOrder.id });
+  respondedMessages.set(jid, "AWAITING_PAYMENT_PROOF");
+  await sock.sendMessage(jid, { text: "💳 يرجى إرسال صورة إيصال الدفع." });
+}
+
+async function submitOrderForReview(jid) {
+  const data = pendingData.get(jid);
+  const id = generateOrderId();
+  const order = {
+    id,
+    customerJid: jid,
+    type: data.type,
+    details: data.details,
+    name: data.name,
+    status: "pending_review",
+    createdAt: new Date().toISOString()
+  };
+  await upsertOrder(order);
+
+  await sock.sendMessage(jid, { text: `⏳ طلبك في انتظار المراجعة. رقم الطلب: ${id} 🙏` });
+  respondedMessages.set(jid, "SUBMITTED"); // Stop further interaction
+  pendingData.delete(jid);
+}
+
+async function requestPayment(jid, orderId) {
+  const text = `✅ تم مراجعة طلبك بنجاح.
+🔴 لتأكيد الطلب يرجى تحويل كامل المبلغ وإرسال صورة الإيصال 🔴
+
+💳 بيانات التحويل:
+• البنك الأهلي
+• مؤسسة لوميرا لتقديم المشروبات
+• رقم الحساب: 42100000744209
+• الآيبان: SA4710000042100000744209`;
   await sock.sendMessage(jid, { text });
-  respondedMessages.set(jid, "TRACKING");
+  respondedMessages.set(jid, "AWAITING_PAYMENT_PROOF");
+  pendingData.set(jid, { orderId });
 }
 
-async function handleTrackOrder(jid, orderId) {
-  const lang = userLanguages.get(jid) || 'ar';
-  let order = null;
-  let data = await readOrders();
-  order = data.orders.find(o => o.id === orderId);
-  if (!order) {
-    data = await readArchivedOrders();
-    order = data.orders.find(o => o.id === orderId);
+async function handlePaymentProof(jid, imageUrl) {
+  // Save or log the imageUrl for admin review
+  const data = pendingData.get(jid);
+  const orderId = data.orderId;
+  const dataOrders = await readOrders();
+  const order = dataOrders.orders.find(o => o.id === orderId);
+  if (order) {
+    order.paymentProof = imageUrl; // Store proof URL
+    order.status = "payment_review";
+    await writeOrders(dataOrders);
   }
-  if (!order) {
-    await sock.sendMessage(jid, { text: TEXTS[lang].orderNotFound.replace('[ORDER_ID]', orderId) });
-  } else {
-    const statusText = getStatusText(order.status, lang);
-    await sock.sendMessage(jid, { text: TEXTS[lang].orderStatus.replace('[ORDER_ID]', orderId).replace('[STATUS]', statusText) });
-  }
+
+  const text = `هل هذا إيصال الدفع؟
+1️⃣ نعم ✅
+2️⃣ لا ❌
+3️⃣ أريد إلغاء الطلب 🛑
+4️⃣ التواصل مع خدمة العملاء 💬`;
+  await sock.sendMessage(jid, { text });
+  respondedMessages.set(jid, "CONFIRM_PAYMENT");
+}
+
+async function confirmPaymentProof(jid) {
+  const data = pendingData.get(jid);
+  const orderId = data.orderId;
+  await sock.sendMessage(jid, { text: `✅ تم تلقي الإيصال. سيتم مراجعته قريبًا. 🙏` });
   respondedMessages.set(jid, "MAIN_MENU");
+  pendingData.delete(jid);
+  // Notify admin panel implicitly via status change
+}
+
+async function rejectPaymentProof(jid) {
+  await sock.sendMessage(jid, { text: `❌ هذا ليس إيصال دفع صالح. يرجى إرسال إيصال صحيح.` });
+  respondedMessages.set(jid, "AWAITING_PAYMENT_PROOF");
+}
+
+async function cancelOrder(jid) {
+  const data = pendingData.get(jid);
+  const orderId = data.orderId;
+  const dataOrders = await readOrders();
+  const idx = dataOrders.orders.findIndex(o => o.id === orderId);
+  if (idx >= 0) {
+    dataOrders.orders[idx].status = "cancelled";
+    await writeOrders(dataOrders);
+  }
+  await sock.sendMessage(jid, { text: `🛑 تم إلغاء الطلب بنجاح.` });
+  respondedMessages.set(jid, "MAIN_MENU");
+  pendingData.delete(jid);
+  await sendWelcomeMenu(jid);
 }
 
 async function startCustomerService(jid, type = "general", silent = false) {
-  const lang = userLanguages.get(jid) || 'ar';
   const sessionId = generateSessionId();
   const twoHours = 2 * 60 * 60 * 1000;
 
   const timeout = setTimeout(async () => {
     customerServiceSessions.delete(sessionId);
     respondedMessages.set(jid, "MAIN_MENU");
-    
+    await sendWelcomeMenu(jid);
   }, twoHours);
 
   customerServiceSessions.set(sessionId, { 
@@ -594,114 +596,32 @@ async function startCustomerService(jid, type = "general", silent = false) {
   respondedMessages.set(jid, "CUSTOMER_SERVICE");
 
   if (!silent) {
-    const serviceText = type === "general" ? (lang === 'ar' ? "خدمة العملاء ☎️" : "Customer Service ☎️") : (lang === 'ar' ? "مشرف الفرع 👨‍🍳" : "Branch Supervisor 👨‍🍳");
+    const serviceText = type === "general" ? "خدمة العملاء ☎️" : "دعم الدفع 💳";
     await sock.sendMessage(jid, { 
-      text: TEXTS[lang].supportStart.replace('[SERVICE_TEXT]', serviceText).replace('[SESSION_ID]', sessionId)
-    });
+      text: `💬 شكراً لتواصلك مع ${serviceText} 🙏\nسوف نقوم بالرد عليك في أقرب وقت ممكن.\n\n🆔 معرف الجلسة: ${sessionId}\n\n🔙 لإنهاء المحادثة والعودة للقائمة الرئيسية أرسل: *0*` });
   }
 }
 
 async function handleEndSession(text, sender) {
-  const lang = userLanguages.get(sender) || 'ar';
   const parts = text.trim().split(/\s+/);
   if (parts.length < 2) {
-    await sock.sendMessage(sender, { text: TEXTS[lang].endSessionInvalid });
+    await sock.sendMessage(sender, { text: "⚠️ يرجى تحديد معرف الجلسة بعد كلمة 'انتهاء' (مثال: انتهاء 1234) ❗" });
     return;
   }
   const sessionId = parts[1];
   const session = customerServiceSessions.get(sessionId);
   if (!session) {
-    await sock.sendMessage(sender, { text: TEXTS[lang].endSessionNotFound.replace('[SESSION_ID]', sessionId) });
+    await sock.sendMessage(sender, { text: `⚠️ لا توجد جلسة بالمعرف ${sessionId}. ❗` });
     return;
   }
   clearTimeout(session.timeout);
   customerServiceSessions.delete(sessionId);
   respondedMessages.set(session.customerJid, "MAIN_MENU");
-  await sock.sendMessage(session.customerJid, { text: TEXTS[lang].endSessionSuccess });
+  await sock.sendMessage(session.customerJid, { text: "✅ تم إنهاء الجلسة. كيف نقدر نخدمك اليوم؟ 👋" });
   await sendWelcomeMenu(session.customerJid);
   if (sender !== session.customerJid) {
-    await sock.sendMessage(sender, { text: TEXTS[lang].endSessionAdmin.replace('[SESSION_ID]', sessionId) });
+    await sock.sendMessage(sender, { text: `✅ تم إنهاء الجلسة (${sessionId}).` });
   }
-}
-
-async function startReviewFlow(jid, orderId) {
-  const lang = userLanguages.get(jid) || 'ar';
-  const text = TEXTS[lang].reviewPrompt;
-  await sock.sendMessage(jid, { text });
-  respondedMessages.set(jid, "AWAITING_REVIEW");
-  pendingData.set(jid, { orderId }); // Store orderId temporarily
-}
-
-
-
-
-// ====== Modified handleReview Function ======
-async function handleReview(jid, ratingText) {
-  const lang = userLanguages.get(jid) || 'ar';
-  const rating = parseInt(ratingText);
-  if (isNaN(rating) || rating < 1 || rating > 4) {
-    await sock.sendMessage(jid, { text: TEXTS[lang].invalidReview });
-    return;
-  }
-
-  const orderId = pendingData.get(jid)?.orderId;
-  const review = {
-    id: generateReviewId(),
-    customerJid: jid,
-    orderId,
-    rating,
-    feedback: null,
-    createdAt: new Date().toISOString()
-  };
-
-  let responseText;
-  switch (rating) {
-    case 1: responseText = TEXTS[lang].reviewResponse1; break;
-    case 2: responseText = TEXTS[lang].reviewResponse2; break;
-    case 3: responseText = TEXTS[lang].reviewResponse3; break;
-    case 4: responseText = TEXTS[lang].reviewResponse4; break;
-  }
-
-  await sock.sendMessage(jid, { text: responseText });
-
-  // Set timeout for review completion (2 hours)
-  const reviewTimeout = setTimeout(async () => {
-    await upsertReview(review); // Save review even if no feedback provided
-    respondedMessages.set(jid, "MAIN_MENU");
-    pendingData.delete(jid);
-    
-  }, REVIEW_TIMEOUT);
-
-  if (rating < 4) {
-    respondedMessages.set(jid, "AWAITING_FEEDBACK");
-    const feedbackTimeout = setTimeout(async () => {
-      await upsertReview(review); // Save review without feedback
-      respondedMessages.set(jid, "MAIN_MENU");
-      pendingData.delete(jid);
-      
-    }, FEEDBACK_TIMEOUT);
-    pendingData.set(jid, { ...review, timeout: feedbackTimeout });
-  } else {
-    await upsertReview(review);
-    respondedMessages.set(jid, "MAIN_MENU");
-    pendingData.delete(jid);
-    
-  }
-}
-  
-
-async function handleFeedback(jid, feedbackText) {
-  const lang = userLanguages.get(jid) || 'ar';
-  const pending = pendingData.get(jid);
-  if (!pending) return;
-
-  clearTimeout(pending.timeout);
-  pending.feedback = feedbackText;
-  await upsertReview(pending);
-  await sock.sendMessage(jid, { text: lang === 'ar' ? "شكرًا لملاحظتك! 🌟" : "Thank you for your feedback! 🌟" });
-  respondedMessages.set(jid, "MAIN_MENU");
-  
-  pendingData.delete(jid);
 }
 
 // ====== Admin Panel & APIs ======
@@ -723,7 +643,8 @@ app.get("/api/orders", async (req, res) => {
   orders = orders.map(order => ({
     ...order,
     whatsappNumber: order.customerJid.split('@')[0],
-    whatsappLink: order.status !== "اكتمل" && order.status !== "ملغى" ? `https://wa.me/${order.customerJid.split('@')[0]}` : null
+    whatsappLink: order.status !== "delivered" && order.status !== "cancelled" ? `https://wa.me/${order.customerJid.split('@')[0]}` : null,
+    paymentProof: order.paymentProof || null
   }));
   res.json({ orders });
 });
@@ -732,64 +653,44 @@ app.patch("/api/orders/:id/status", async (req, res) => {
   const id = req.params.id;
   const { status } = req.body || {};
   if (!status) return res.status(400).json({ error: "status مطلوب" });
+
   const data = await readOrders();
   const idx = data.orders.findIndex(o => o.id === id);
   if (idx < 0) return res.status(404).json({ error: "طلب غير موجود" });
+
   const order = data.orders[idx];
   const oldStatus = order.status;
   order.status = status;
   await writeOrders(data);
 
-  const lang = userLanguages.get(order.customerJid) || 'ar';
-
   try {
-    if (status === "جاري التحضير" && oldStatus === "بانتظار التأكيد") {
-      await sock.sendMessage(order.customerJid, { text: TEXTS[lang].orderAccepted.replace('[ORDER_ID]', order.id) });
-    } else if (status === "في الطريق") {
-      await sock.sendMessage(order.customerJid, { text: TEXTS[lang].orderOnWay.replace('[ORDER_ID]', order.id) });
-    } else if (status === "اكتمل") {
-      await sock.sendMessage(order.customerJid, { text: TEXTS[lang].orderDelivered.replace('[ORDER_ID]', order.id) });
-      await startReviewFlow(order.customerJid, order.id); // Start review after delivery
-    } else if (status === "ملغى") {
-      await sock.sendMessage(order.customerJid, { text: TEXTS[lang].orderCancelled.replace('[ORDER_ID]', order.id) });
+    if (status === "awaiting_payment" && oldStatus === "pending_review") {
+      await requestPayment(order.customerJid, order.id);
+    } else if (status === "confirmed" && oldStatus === "payment_review") {
+      await sock.sendMessage(order.customerJid, { text: `✅ تم تأكيد دفع طلبك ${order.id}. سيتم التحضير قريبًا. 🍰` });
+    } else if (status === "preparing") {
+      await sock.sendMessage(order.customerJid, { text: `🔔 تحديث: طلبك ${order.id} قيد التحضير 🍰` });
+    } else if (status === "ready") {
+      await sock.sendMessage(order.customerJid, { text: `🔔 تحديث: طلبك ${order.id} جاهز للاستلام 🛍️` });
+    } else if (status === "delivered") {
+      await sock.sendMessage(order.customerJid, { text: `🔔 تحديث: طلبك ${order.id} تم التسليم ✅` });
+    } else if (status === "cancelled") {
+      await sock.sendMessage(order.customerJid, { text: `🔔 تحديث: طلبك ${order.id} ملغى ❌` });
+      respondedMessages.set(order.customerJid, "MAIN_MENU");
+      await sendWelcomeMenu(order.customerJid);
     } else {
-      await sock.sendMessage(order.customerJid, { text: TEXTS[lang].orderUpdate.replace('[ORDER_ID]', order.id).replace('[STATUS]', getStatusText(status, lang)) });
+      await sock.sendMessage(order.customerJid, { text: `🔔 تحديث حالة طلبك ${order.id}: ${getStatusText(status)}` });
     }
   } catch (e) {
     console.error("⚠️ فشل إرسال إشعار للعميل:", e.message);
   }
 
-  if (status === "اكتمل") {
-    const archivedData = await readArchivedOrders();
-    archivedData.orders.push(order);
-    await writeArchivedOrders(archivedData);
+  if (status === "delivered") {
     data.orders = data.orders.filter(o => o.id !== id);
     await writeOrders(data);
   }
 
   res.json({ success: true });
-});
-
-app.delete("/api/orders/:id", async (req, res) => {
-  const id = req.params.id;
-  const data = await readOrders();
-  const idx = data.orders.findIndex(o => o.id === id);
-  if (idx < 0) return res.status(404).json({ error: "طلب غير موجود" });
-  data.orders.splice(idx, 1);
-  await writeOrders(data);
-  res.json({ success: true });
-});
-
-// ---- Archived Orders ----
-app.get("/api/archived_orders", async (req, res) => {
-  const data = await readArchivedOrders();
-  res.json(data);
-});
-
-// ---- Reviews ----
-app.get("/api/reviews", async (req, res) => {
-  const data = await readReviews();
-  res.json({ reviews: data.reviews });
 });
 
 // ====== Start Server & WA ======
