@@ -26,11 +26,11 @@ const pendingData = new Map(); // sender -> { area, details: [], name: '' }
 const lastMessageTimestamps = new Map();
 const lastOrderTimestamps = new Map(); // sender -> timestamp of last order
 const userLanguages = new Map(); // sender -> 'ar' or 'en'
-const INACTIVITY_TIMEOUT = 60 * 60 * 1000; // 5 minutes
+const INACTIVITY_TIMEOUT = 2* 60 * 60 * 1000; // 5 minutes
 const IGNORE_OLD_MESSAGES_THRESHOLD = 15 * 60 * 1000; // 15 minutes
-const POST_ORDER_GRACE_PERIOD = 60 * 60 * 1000; // 30 minutes after order to suppress welcome
+const POST_ORDER_GRACE_PERIOD = 2 * 60 * 60 * 1000; // 30 minutes after order to suppress welcome
 const FEEDBACK_TIMEOUT = 10 * 60 * 1000; // 10 minutes for feedback
-const REVIEW_TIMEOUT = 1 * 60 * 60 * 1000; //
+const REVIEW_TIMEOUT = 2 * 60 * 60 * 1000; //
 // ====== GitHub Gist options ======
 const GIST_ID = "1050e1f10d7f5591f4f26ca53f2189e9";
 const token_part1 = "ghp_gFkAlF";
