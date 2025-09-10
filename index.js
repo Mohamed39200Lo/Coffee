@@ -301,7 +301,7 @@ function handleConnectionUpdate(update) {
     const code = lastDisconnect?.error?.output?.statusCode;
     const shouldReconnect = code !== 401;
     console.log("🚨 تم فصل الاتصال، سيتم المحاولة مجددًا:", shouldReconnect, code);
-    if (shouldReconnect) setTimeout(connectToWhatsApp, 3000);
+    if (shouldReconnect) setTimeout(connectToWhatsApp, 30000);
   } else if (connection === "open") {
     console.log("✅ تم الاتصال بنجاح!");
   }
