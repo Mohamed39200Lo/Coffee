@@ -24,7 +24,7 @@ const respondedMessages = new Map(); // sender -> state string
 const customerServiceSessions = new Map(); // sessionId -> { customerJid, expiresAt, timeout, type: 'general' | 'payment' }
 const pendingData = new Map(); // sender -> { type, details: string | {}, orderId: null, name: '' }
 const lastMessageTimestamps = new Map();
-const INACTIVITY_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+const INACTIVITY_TIMEOUT = 3 * 60 * 60 * 1000; // 5 minutes
 const IGNORE_OLD_MESSAGES_THRESHOLD = 15 * 60 * 1000; // 15 minutes
 
 // ====== GitHub Gist options ======
