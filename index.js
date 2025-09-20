@@ -22,7 +22,7 @@ for (const dir of [DATA_DIR, PUBLIC_DIR]) {
 global.qrCodeUrl = null;
 const respondedMessages = new Map(); // sender -> state string
 const customerServiceSessions = new Map(); // sessionId -> { customerJid, expiresAt, timeout, type: 'general' | 'payment' }
-const pendingData = new Map(); // sender -> { type, details: string | {}, orderId: null, name: '' }
+const pendingData = new Map(); // sender -> { type, details: string | {}, orderId: null, name: '', filling: '' }
 const lastMessageTimestamps = new Map();
 const INACTIVITY_TIMEOUT = 3 * 60 * 60 * 1000; // 5 minutes
 const IGNORE_OLD_MESSAGES_THRESHOLD = 15 * 60 * 1000; // 15 minutes
@@ -60,6 +60,32 @@ async function writeOrders(data) {
   }
 }
 
+async function readSessions() {
+  try {
+    const response = await axios.get(`https://api.github.com/gists/${GIST_ID}`, {
+      headers: { Authorization: `token ${GITHUB_TOKEN}` }
+    });
+    const sessionsData = JSON.parse(response.data.files["sessions.json"]?.content || '{"sessions": []}');
+    return { sessions: Array.isArray(sessionsData.sessions) ? sessionsData.sessions : [] };
+  } catch (e) {
+    console.error("❌ خطأ في قراءة الجلسات من Gist:", e.message);
+    return { sessions: [] };
+  }
+}
+
+async function writeSessions(data) {
+  try {
+    const safeData = { sessions: Array.isArray(data.sessions) ? data.sessions : [] };
+    await axios.patch(
+      `https://api.github.com/gists/${GIST_ID}`,
+      { files: { "sessions.json": { content: JSON.stringify(safeData, null, 2) } } },
+      { headers: { Authorization: `token ${GITHUB_TOKEN}` } }
+    );
+  } catch (e) {
+    console.error("❌ فشل حفظ الجلسات إلى Gist:", e.message);
+  }
+}
+
 // ====== Helpers ======
 function convertArabicToEnglishNumbers(text) {
   const arabicNumbers = ['٠','١','٢','٣','٤','٥','٦','٧','٨','٩'];
@@ -90,6 +116,23 @@ async function upsertOrder(order) {
   return order.id;
 }
 
+async function upsertSession(session) {
+  const data = await readSessions();
+  const idx = data.sessions.findIndex(s => s.id === session.id);
+  if (idx >= 0) {
+    data.sessions[idx] = session;
+  } else {
+    data.sessions.push(session);
+  }
+  await writeSessions(data);
+}
+
+async function deleteSession(sessionId) {
+  const data = await readSessions();
+  data.sessions = data.sessions.filter(s => s.id !== sessionId);
+  await writeSessions(data);
+}
+
 function getStatusText(status) {
   switch (status) {
     case "pending_review":
@@ -112,6 +155,16 @@ function getStatusText(status) {
       return "غير معروف ❓";
   }
 }
+
+const FILLINGS = [
+  "فانيليا توت",
+  "بستاشيو توت",
+  "شوكلت توت",
+  "شوكلت كراميل",
+  "فانيليا مانجو",
+  "رمان",
+  "توت وليمون"
+];
 
 // ====== Catalog Links ======
 const CELEBRATION_CAKES_CATALOG = "https://wa.me/c/201271021907"; // Example, replace with actual
@@ -208,7 +261,13 @@ async function handleMessagesUpsert({ messages }) {
       if (state === "AWAITING_PAYMENT_PROOF" || state === "CONFIRM_PAYMENT") {
         await cancelOrder(sender);
         return;
-      } else if (state !== "SUBMITTED" && state !== "CUSTOMER_SERVICE") {
+      } else if (state === "CUSTOMER_SERVICE") {
+        const sessions = Array.from(customerServiceSessions.values()).filter(s => s.customerJid === sender);
+        for (const session of sessions) {
+          await endCustomerServiceSession(session.sessionId, true); // with notification
+        }
+        return;
+      } else if (state !== "SUBMITTED") {
         respondedMessages.set(sender, "MAIN_MENU");
         pendingData.delete(sender);
         await sendWelcomeMenu(sender);
@@ -276,8 +335,7 @@ async function routeExistingUser(sender, text, isImage) {
     if (state === "CUSTOMER_SERVICE") {
       const sessions = Array.from(customerServiceSessions.values()).filter(s => s.customerJid === sender);
       for (const session of sessions) {
-        clearTimeout(session.timeout);
-        customerServiceSessions.delete(session.sessionId);
+        await endCustomerServiceSession(session.sessionId, true); // with notification
       }
     }
     respondedMessages.set(sender, "MAIN_MENU");
@@ -301,8 +359,27 @@ async function routeExistingUser(sender, text, isImage) {
   if (state === "AWAITING_ORDER_DETAILS" || state === "AWAITING_CATALOG_ORDER") {
     if (text.startsWith("طلب من الكتالوج:")) {
       pendingData.set(sender, { ...pendingData.get(sender), details: text });
+      await sendFillingsOptions(sender);
+      respondedMessages.set(sender, "AWAITING_FILLING");
+      return;
+    }
+  }
+
+  if (state === "AWAITING_FILLING") {
+    const choice = parseInt(text);
+    if (choice >= 1 && choice <= FILLINGS.length) {
+      const filling = FILLINGS[choice - 1];
+      pendingData.set(sender, { ...pendingData.get(sender), filling });
       await sock.sendMessage(sender, { text: "الرجاء إرسال اسمك لتأكيد الطلب 👤" });
       respondedMessages.set(sender, "AWAITING_NAME");
+      return;
+    } else if (text === "0") {
+      respondedMessages.set(sender, "MAIN_MENU");
+      pendingData.delete(sender);
+      await sendWelcomeMenu(sender);
+      return;
+    } else {
+      await sock.sendMessage(sender, { text: "⚠️ الرجاء اختيار رقم صالح من 1 إلى " + FILLINGS.length + " أو 0 للإلغاء." });
       return;
     }
   }
@@ -425,6 +502,15 @@ async function handleGeneralCatalogOrder(jid) {
   pendingData.set(jid, { type: "general_catalog", details: "" });
 }
 
+async function sendFillingsOptions(jid) {
+  let fillingsText = "يرجى اختيار الحشوة المتوفرة:\n";
+  FILLINGS.forEach((filling, index) => {
+    fillingsText += `${index + 1}. ${filling}\n`;
+  });
+  fillingsText += "\nأرسل الرقم المقابل للحشوة المرغوبة، أو 0 للإلغاء.";
+  await sock.sendMessage(jid, { text: fillingsText });
+}
+
 async function handleSendPaymentProof(jid) {
   const data = await readOrders();
   const customerOrders = data.orders.filter(o => o.customerJid === jid && o.status === "awaiting_payment");
@@ -443,12 +529,16 @@ async function handleSendPaymentProof(jid) {
 
 async function submitOrderForReview(jid) {
   const data = pendingData.get(jid);
+  let details = data.details;
+  if (data.filling) {
+    details += `\nالحشوة: ${data.filling}`;
+  }
   const id = generateOrderId();
   const order = {
     id,
     customerJid: jid,
     type: data.type,
-    details: data.details,
+    details,
     name: data.name,
     status: "pending_review",
     createdAt: new Date().toISOString()
@@ -529,17 +619,19 @@ async function startCustomerService(jid, type = "general", silent = false) {
   const twoHours = 2 * 60 * 60 * 1000;
 
   const timeout = setTimeout(async () => {
-    customerServiceSessions.delete(sessionId);
-    respondedMessages.set(jid, "MAIN_MENU");
-    await sendWelcomeMenu(jid);
+    await endCustomerServiceSession(sessionId, false);
   }, twoHours);
 
-  customerServiceSessions.set(sessionId, { 
+  const session = { 
+    id: sessionId,
     customerJid: jid, 
     expiresAt: Date.now() + twoHours, 
     timeout,
-    type
-  });
+    type,
+    createdAt: new Date().toISOString()
+  };
+  customerServiceSessions.set(sessionId, session);
+  await upsertSession(session);
 
   respondedMessages.set(jid, "CUSTOMER_SERVICE");
 
@@ -547,6 +639,21 @@ async function startCustomerService(jid, type = "general", silent = false) {
     const serviceText = type === "general" ? "خدمة العملاء ☎️" : "دعم الدفع 💳";
     await sock.sendMessage(jid, { 
       text: `💬 شكراً لتواصلك مع ${serviceText} 🙏\nسوف نقوم بالرد عليك في أقرب وقت ممكن.\n\n🆔 معرف الجلسة: ${sessionId}\n\n🔙 لإنهاء المحادثة والعودة للقائمة الرئيسية أرسل: *0*` });
+  }
+}
+
+async function endCustomerServiceSession(sessionId, notify = true) {
+  const session = customerServiceSessions.get(sessionId);
+  if (!session) return;
+
+  clearTimeout(session.timeout);
+  customerServiceSessions.delete(sessionId);
+  await deleteSession(sessionId);
+  respondedMessages.set(session.customerJid, "MAIN_MENU");
+
+  if (notify) {
+    await sock.sendMessage(session.customerJid, { text: "✅ تم إنهاء الجلسة. كيف نقدر نخدمك اليوم؟ 👋" });
+    await sendWelcomeMenu(session.customerJid);
   }
 }
 
@@ -562,11 +669,7 @@ async function handleEndSession(text, sender) {
     await sock.sendMessage(sender, { text: `⚠️ لا توجد جلسة بالمعرف ${sessionId}. ❗` });
     return;
   }
-  clearTimeout(session.timeout);
-  customerServiceSessions.delete(sessionId);
-  respondedMessages.set(session.customerJid, "MAIN_MENU");
-  await sock.sendMessage(session.customerJid, { text: "✅ تم إنهاء الجلسة. كيف نقدر نخدمك اليوم؟ 👋" });
-  await sendWelcomeMenu(session.customerJid);
+  await endCustomerServiceSession(sessionId, true);
   if (sender !== session.customerJid) {
     await sock.sendMessage(sender, { text: `✅ تم إنهاء الجلسة (${sessionId}).` });
   }
@@ -641,6 +744,23 @@ app.patch("/api/orders/:id/status", async (req, res) => {
     await writeOrders(data);
   }
 
+  res.json({ success: true });
+});
+
+// ---- Sessions ----
+app.get("/api/sessions", async (req, res) => {
+  const data = await readSessions();
+  const sessions = data.sessions.map(session => ({
+    ...session,
+    whatsappNumber: session.customerJid.split('@')[0],
+    whatsappLink: `https://wa.me/${session.customerJid.split('@')[0]}`
+  }));
+  res.json({ sessions });
+});
+
+app.delete("/api/sessions/:id", async (req, res) => {
+  const id = req.params.id;
+  await endCustomerServiceSession(id, false); // silent, no notification
   res.json({ success: true });
 });
 
