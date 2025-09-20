@@ -631,7 +631,11 @@ async function startCustomerService(jid, type = "general", silent = false) {
     createdAt: new Date().toISOString()
   };
   customerServiceSessions.set(sessionId, session);
-  await upsertSession(session);
+
+  // Persist without the timeout (to avoid circular JSON)
+  const sessionToPersist = { ...session };
+  delete sessionToPersist.timeout;
+  await upsertSession(sessionToPersist);
 
   respondedMessages.set(jid, "CUSTOMER_SERVICE");
 
