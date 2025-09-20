@@ -168,7 +168,6 @@ const FILLINGS = [
 
 // ====== Catalog Links ======
 const CELEBRATION_CAKES_CATALOG = "https://wa.me/c/201271021907"; // Example, replace with actual
-const GENERAL_CATALOG = "https://wa.me/c/201271021907";
 
 // ====== WhatsApp Connection ======
 let sock;
@@ -252,7 +251,7 @@ async function handleMessagesUpsert({ messages }) {
       return;
     }
 
-    if (text === "7") {
+    if (text === "6") {
       await startCustomerService(sender, "general");
       return;
     }
@@ -275,7 +274,7 @@ async function handleMessagesUpsert({ messages }) {
       }
     }
 
-    if (state === "SUBMITTED") return; // Stop interacting after order submission unless 0 or 7
+    if (state === "SUBMITTED") return; // Stop interacting after order submission unless 0 or 6
 
     if (state === "AWAITING_PAYMENT_PROOF" && isImage) {
       await handlePaymentProof(sender, imageUrl);
@@ -308,10 +307,9 @@ async function sendWelcomeMenu(jid) {
 1️⃣ 🕒 أوقات عمل المقهى
 2️⃣ 🎂 الطلبيات الخاصة لمناسباتكم
 3️⃣ 🍰 منيو كيكات الاحتفالات 🎉
-4️⃣ 📖 طلب من الكتالوج
-5️⃣ 🔄 سياسة الإلغاء والاستبدال
-6️⃣ 💳 إرسال إيصال الدفع
-7️⃣ 💬 التحدث مع خدمة العملاء
+4️⃣ 🔄 سياسة الإلغاء والاستبدال
+5️⃣ 💳 إرسال إيصال الدفع
+6️⃣ 💬 التحدث مع خدمة العملاء
 
 🏛 للعودة إلى القائمة الرئيسية في أي وقت أرسل: *0*
 
@@ -347,16 +345,15 @@ async function routeExistingUser(sender, text, isImage) {
     if (text === "1") return handleWorkingHours(sender);
     if (text === "2") return handleSpecialOrderRedirect(sender);
     if (text === "3") return handleCelebrationCakesMenu(sender);
-    if (text === "4") return handleGeneralCatalogOrder(sender);
-    if (text === "5") return handleCancellationPolicy(sender);
-    if (text === "6") return handleSendPaymentProof(sender);
-    if (text === "7") return startCustomerService(sender, "general");
+    if (text === "4") return handleCancellationPolicy(sender);
+    if (text === "5") return handleSendPaymentProof(sender);
+    if (text === "6") return startCustomerService(sender, "general");
     await sock.sendMessage(sender, { text: "👋 مرحبًا بك! الرجاء اختيار رقم من القائمة علشان نقدر نخدمك بشكل أفضل ❤️." });
     await sendWelcomeMenu(sender);
     return;
   }
 
-  if (state === "AWAITING_ORDER_DETAILS" || state === "AWAITING_CATALOG_ORDER") {
+  if (state === "AWAITING_ORDER_DETAILS") {
     if (text.startsWith("طلب من الكتالوج:")) {
       pendingData.set(sender, { ...pendingData.get(sender), details: text });
       await sendFillingsOptions(sender);
@@ -410,11 +407,11 @@ async function routeExistingUser(sender, text, isImage) {
         await cancelOrder(sender);
         return;
       }
-      if (text === "7") {
+      if (text === "6") {
         await startCustomerService(sender, "general");
         return;
       }
-      await sock.sendMessage(sender, { text: "⚠️ نحن بانتظار صورة إيصال الدفع. إذا أردت إلغاء الطلب أرسل 0. والتواصل مع خدمة العملاء أرسل 7" });
+      await sock.sendMessage(sender, { text: "⚠️ نحن بانتظار صورة إيصال الدفع. إذا أردت إلغاء الطلب أرسل 0. والتواصل مع خدمة العملاء أرسل 6" });
       return;
     }
   }
@@ -446,7 +443,7 @@ async function handleCancellationPolicy(jid) {
 يمكن تعديل التفاصيل أو استبدال الطلب قبل الموعد بـ 3 أيام كحد أقصى.
 
 📞 للإلغاء أو تغيير تفاصيل الحجز
-يرجى التواصل مع خدمة العملاء عبر إرسال الرقم: 7`;
+يرجى التواصل مع خدمة العملاء عبر إرسال الرقم: 6`;
   await sock.sendMessage(jid, { text });
   respondedMessages.set(jid, "MAIN_MENU");
 }
@@ -482,24 +479,6 @@ async function handleCelebrationCakesMenu(jid) {
   });
   respondedMessages.set(jid, "AWAITING_ORDER_DETAILS");
   pendingData.set(jid, { type: "celebration_cakes", details: "" });
-}
-
-async function handleGeneralCatalogOrder(jid) {
-  const text = `📦 طلب من الكتالوج
-يمكنك اختيار الطلبات، ثم الضغط على "إرسال الطلب".
-
-⏩️ ${GENERAL_CATALOG}`;
-  await sock.sendMessage(jid, { 
-    text,
-    linkPreview: {
-      title: 'كتالوج المخبز والمقهى 📖',
-      body: 'أطيب المخبوزات والمشروبات ☕',
-      canonicalUrl: GENERAL_CATALOG,
-      matchedText: GENERAL_CATALOG
-    }
-  });
-  respondedMessages.set(jid, "AWAITING_CATALOG_ORDER");
-  pendingData.set(jid, { type: "general_catalog", details: "" });
 }
 
 async function sendFillingsOptions(jid) {
