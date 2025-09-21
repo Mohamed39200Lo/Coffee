@@ -262,8 +262,18 @@ async function handleMessagesUpsert({ messages }) {
         return;
       } else if (state === "CUSTOMER_SERVICE") {
         const sessions = Array.from(customerServiceSessions.values()).filter(s => s.customerJid === sender);
-        for (const session of sessions) {
-          await endCustomerServiceSession(session.sessionId, true); // with notification
+        if (sessions.length === 0) {
+          // Fallback if session not found in memory (e.g., after restart without loading)
+          respondedMessages.set(sender, "MAIN_MENU");
+          await sendWelcomeMenu(sender);
+          // Attempt to clean up from Gist
+          const data = await readSessions();
+          data.sessions = data.sessions.filter(s => s.customerJid !== sender);
+          await writeSessions(data);
+        } else {
+          for (const session of sessions) {
+            await endCustomerServiceSession(session.id, true); // with notification
+          }
         }
         return;
       } else if (state !== "SUBMITTED") {
@@ -333,7 +343,7 @@ async function routeExistingUser(sender, text, isImage) {
     if (state === "CUSTOMER_SERVICE") {
       const sessions = Array.from(customerServiceSessions.values()).filter(s => s.customerJid === sender);
       for (const session of sessions) {
-        await endCustomerServiceSession(session.sessionId, true); // with notification
+        await endCustomerServiceSession(session.id, true); // with notification
       }
     }
     respondedMessages.set(sender, "MAIN_MENU");
@@ -632,7 +642,7 @@ async function endCustomerServiceSession(sessionId, notify = true) {
   clearTimeout(session.timeout);
   customerServiceSessions.delete(sessionId);
   await deleteSession(sessionId);
-  respondedMessages.set(session.customerJid, "MAIN_MENU");
+  respondedMessages.delete(session.customerJid); // Changed to delete to reset state
 
   if (notify) {
     await sock.sendMessage(session.customerJid, { text: "✅ تم إنهاء الجلسة. كيف نقدر نخدمك اليوم؟ 👋" });
@@ -655,6 +665,30 @@ async function handleEndSession(text, sender) {
   await endCustomerServiceSession(sessionId, true);
   if (sender !== session.customerJid) {
     await sock.sendMessage(sender, { text: `✅ تم إنهاء الجلسة (${sessionId}).` });
+  }
+}
+
+// ====== Init Sessions on Startup ======
+async function initSessions() {
+  const data = await readSessions();
+  const now = Date.now();
+  let cleaned = false;
+  const activeSessions = [];
+  for (const session of data.sessions) {
+    if (session.expiresAt < now) {
+      cleaned = true;
+      continue;
+    }
+    activeSessions.push(session);
+    const remaining = session.expiresAt - now;
+    const timeout = setTimeout(async () => {
+      await endCustomerServiceSession(session.id, false);
+    }, remaining);
+    customerServiceSessions.set(session.id, { ...session, timeout });
+    respondedMessages.set(session.customerJid, "CUSTOMER_SERVICE");
+  }
+  if (cleaned) {
+    await writeSessions({ sessions: activeSessions });
   }
 }
 
@@ -748,6 +782,8 @@ app.delete("/api/sessions/:id", async (req, res) => {
 });
 
 // ====== Start Server & WA ======
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 السيرفر يعمل على http://localhost:${PORT}`));
-connectToWhatsApp();
+initSessions().then(() => {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => console.log(`🚀 السيرفر يعمل على http://localhost:${PORT}`));
+  connectToWhatsApp();
+}).catch(e => console.error("❌ خطأ في تهيئة الجلسات:", e));
