@@ -263,13 +263,8 @@ async function handleMessagesUpsert({ messages }) {
       } else if (state === "CUSTOMER_SERVICE") {
         const sessions = Array.from(customerServiceSessions.values()).filter(s => s.customerJid === sender);
         for (const session of sessions) {
-          clearTimeout(session.timeout);
-          customerServiceSessions.delete(session.sessionId);
-          await deleteSession(session.sessionId);
+          await endCustomerServiceSession(session.sessionId, true); // with notification
         }
-        respondedMessages.set(sender, "MAIN_MENU");
-        await sock.sendMessage(sender, { text: "✅ تم إنهاء الجلسة. كيف نقدر نخدمك اليوم؟ 👋" });
-        await sendWelcomeMenu(sender);
         return;
       } else if (state !== "SUBMITTED") {
         respondedMessages.set(sender, "MAIN_MENU");
