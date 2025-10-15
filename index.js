@@ -178,7 +178,7 @@ async function connectToWhatsApp() {
     printQRInTerminal: false,
     browser: Browsers.macOS("Safari"),
     version: [2, 3000, 1027934701],
-    syncFullHistory: false
+    
   });
 
   sock.ev.on("creds.update", saveCreds);
